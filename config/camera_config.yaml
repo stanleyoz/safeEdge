@@ -1,0 +1,17 @@
+# ── Video source ─────────────────────────────────────────────────────────────
+# source: int (USB device), RTSP URL, or file path
+# Examples:
+#   source: 0                                   # first USB webcam
+#   source: "rtsp://192.168.1.50:554/stream"    # WiFi/IP camera
+#   source: "demo/scenario_a.mp4"               # pre-recorded file
+source: 0
+target_fps: 15.0
+
+# ── Homography ────────────────────────────────────────────────────────────────
+# Path to calibration file produced by tools/calibrate_homography.py
+# Set to null to use the mock identity homography (for --mock mode)
+homography_file: "config/homography.npy"
+
+# ── Mock mode ────────────────────────────────────────────────────────────────
+mock:
+  enabled: false     # override with --mock flag or set true here for dev

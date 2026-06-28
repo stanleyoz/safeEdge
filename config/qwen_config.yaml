@@ -1,0 +1,53 @@
+cloud:
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  # API key loaded from DASHSCOPE_API_KEY env var — never hardcode here
+  models:
+    reasoning: "qwen-plus"        # policy decisions, risk forecasting
+    reporting: "qwen-turbo"       # incident reports, summaries (faster/cheaper)
+    max_tokens: 1024
+  rate_limit:
+    requests_per_minute: 30
+    retry_attempts: 3
+    retry_backoff_s: 2.0
+
+local:
+  base_url: "http://localhost:11434/v1"
+  model: "qwen2.5:3b"
+  # Falls back to conservative defaults if Ollama not running
+  timeout_s: 3.0                  # hard limit — safety loop cannot block
+  max_tokens: 256                 # short decisive responses only
+
+# ── SKILL DEFINITIONS ───────────────────────────────────────────────────────
+skills:
+  policy_manager:
+    trigger: "cloud"
+    call_interval_s: 300          # every 5 min during operation
+    also_on_events: [emergency, warning]
+    system_prompt: |
+      You are a safety policy manager for an edge-deployed pedestrian safety
+      system monitoring a car park. You receive STL robustness timeseries and
+      event summaries. Your job is to recommend parameter adjustments to the
+      STL specification library to maintain safety without over-alerting.
+      Respond ONLY with valid JSON matching the schema: {"phi1": {...params},
+      "phi2": {...params}, ...} — include only specs whose params you want to
+      change. Omit specs you want to leave unchanged.
+
+  incident_reporter:
+    trigger: "cloud"
+    call_on_events: [emergency, warning]
+    system_prompt: |
+      You are a safety incident reporter for a car park monitoring system.
+      Given a structured event (timestamp, robustness values, object positions,
+      duration), write a concise 2-3 sentence incident report suitable for a
+      building safety log. Plain English, no jargon, factual.
+
+  risk_forecaster:
+    trigger: "cloud"
+    call_interval_s: 3600         # hourly
+    lookback_events: 50
+    system_prompt: |
+      You are a predictive safety analyst. Given a list of historical safety
+      events with timestamps and severity, identify temporal patterns and predict
+      the next high-risk time window. Respond with JSON: {"high_risk_windows":
+      [{"start": "HH:MM", "end": "HH:MM", "confidence": 0.0-1.0,
+      "reason": "string"}], "recommendations": ["string", ...]}.

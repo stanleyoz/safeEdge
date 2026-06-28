@@ -1,0 +1,120 @@
+version: "1.0"
+update_source: "local"   # "cloud" when Qwen Cloud pushes a policy update
+sample_rate_hz: 30
+
+# Monitoring zone in camera coordinate frame (metres, origin = camera)
+zone:
+  x_min: -8.0
+  x_max:  8.0
+  y_min:  0.0   # forward only
+  y_max: 12.0
+  z_clip: 3.0   # ignore objects above 3m (birds, branches)
+
+# ── SPEC LIBRARY ────────────────────────────────────────────────────────────
+# stl: template string — {param_name} replaced at runtime
+# track: "arithmetic" (memoryless, runs in actuator path)
+#         "rtamt"      (temporal, requires sliding window)
+# ────────────────────────────────────────────────────────────────────────────
+specs:
+  phi1:
+    name: minimum_separation
+    description: >
+      Pedestrian-vehicle clearance must always exceed the critical threshold.
+      Robustness = distance margin above threshold (negative = violation).
+    track: arithmetic
+    rho_expr: "d_min - {clearance_critical}"
+    params:
+      clearance_critical: 1.5   # metres
+    intervention: emergency
+
+  phi2:
+    name: speed_proximity_coupling
+    description: >
+      Vehicles must reduce speed when any pedestrian is within the proximity zone.
+      Memoryless — evaluated each timestep independently.
+    track: arithmetic
+    # ρ = max(d_min - proximity_zone, speed_limit - v_veh_max)
+    # Positive when d >= zone (not triggered) OR v already below limit.
+    rho_expr: "max(d_min - {proximity_zone}, {speed_limit_slow} - v_veh_max)"
+    params:
+      proximity_zone: 5.0       # metres
+      speed_limit_slow: 1.4     # m/s  (~5 km/h)
+    intervention: warning
+
+  phi3:
+    name: predictive_near_miss
+    description: >
+      Novel contribution: uses trajectory-predicted d_pred as the STL signal.
+      Direct arithmetic — d_pred is already a future-looking quantity so no
+      temporal window needed. Robustness = predicted clearance margin.
+    track: arithmetic
+    rho_expr: "d_pred - {warning_horizon}"
+    params:
+      warning_horizon: 3.0      # metres — predicted distance threshold
+    intervention: predictive_warning
+
+  phi4:
+    name: emergency_stop_compliance
+    description: >
+      If vehicle is within emergency distance NOW, it must have reached near-stop
+      at some point in the last stop_window steps.
+      Pattern from PhD paper: antecedent implies once[0,N](consequent).
+    track: rtamt
+    stl: "(d_min < {clearance_emergency}) implies once[0,{stop_window}](v_veh_max < {speed_stopped})"
+    params:
+      clearance_emergency: 1.0  # metres
+      speed_stopped: 0.1        # m/s
+      stop_window: 60           # timesteps  (2 s at 30 Hz)
+    intervention: emergency
+
+  phi5:
+    name: post_alert_clearance
+    description: >
+      If an alert is currently active, the zone must have achieved safe clearance
+      at some point in the last clearance_timeout steps.
+    track: rtamt
+    stl: "(alert_active > 0.5) implies once[0,{clearance_timeout}](d_min > {clearance_safe})"
+    params:
+      clearance_safe: 2.5
+      clearance_timeout: 450    # timesteps  (15 s at 30 Hz)
+    intervention: monitor
+
+# ── INTERVENTION LEVELS ─────────────────────────────────────────────────────
+intervention:
+  safe:
+    level: 0
+    rho_min: 3.0        # ρ1 > 3.0 → fully safe
+    action: pass_through
+    log: false
+
+  awareness:
+    level: 1
+    rho_min: 1.0        # 1.0 < ρ1 ≤ 3.0
+    action: log_event
+    log: true
+
+  warning:
+    level: 2
+    rho_min: 0.0        # 0.0 < ρ1 ≤ 1.0 — or φ2/φ3 triggered
+    action: warning_alert
+    log: true
+    cloud_report: true
+
+  emergency:
+    level: 3
+    rho_min: -9999      # ρ1 ≤ 0.0 — actual clearance violation
+    action: emergency_alert
+    log: true
+    cloud_report: true
+
+# Graduated response: proportional velocity scaling factor
+# S = (d_min - clearance_critical) / (proportional_zone_start - clearance_critical)
+# S clipped to [0, 1]; 1 = full speed, 0 = stop
+graduated_response:
+  proportional_zone_start: 5.0
+  proportional_zone_end: 1.5
+
+# Hysteresis to prevent alert flapping
+hysteresis:
+  upgrade_hold_frames: 3    # must stay at higher level for N frames before upgrading
+  downgrade_hold_frames: 15 # must stay at lower level for N frames before downgrading

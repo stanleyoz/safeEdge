@@ -1,0 +1,32 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Environment — never commit secrets
+.env
+
+# Calibration output (machine-specific)
+config/homography.npy
+
+# Model weights cached by ultralytics
+*.pt
+*.onnx
+*.engine
+
+# Demo recordings
+demo/
+*.mp4
+*.bag
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
