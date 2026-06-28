@@ -50,14 +50,50 @@ def _on_click(event, x, y, flags, param):
 
 
 def capture_frame(source: int | str) -> np.ndarray:
+    # For integer device indices on Linux, try ffmpeg first (works around
+    # OpenCV V4L2 mmap/QBUF failures on WSL2+usbipd)
+    if isinstance(source, int):
+        frame = _capture_via_ffmpeg(source)
+        if frame is not None:
+            return frame
+        source = f"/dev/video{source}"
+
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         sys.exit(f"Cannot open source: {source!r}")
-    ok, frame = cap.read()
+    ok, frame = False, None
+    for _ in range(10):
+        ok, frame = cap.read()
+        if ok:
+            break
     cap.release()
     if not ok:
         sys.exit("Failed to read frame from source")
     return frame
+
+
+def _capture_via_ffmpeg(device_index: int) -> np.ndarray | None:
+    import subprocess, tempfile, os
+    dev = f"/dev/video{device_index}"
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+        tmp = f.name
+    try:
+        r = subprocess.run(
+            ["ffmpeg", "-nostdin", "-f", "v4l2", "-input_format", "mjpeg",
+             "-video_size", "640x480", "-i", dev,
+             "-frames:v", "1", tmp, "-y", "-loglevel", "error"],
+            timeout=10,
+            stdin=subprocess.DEVNULL,
+        )
+        if r.returncode == 0:
+            frame = cv2.imread(tmp)
+            if frame is not None:
+                return frame
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    finally:
+        os.unlink(tmp)
+    return None
 
 
 def get_world_points() -> np.ndarray:
@@ -82,15 +118,21 @@ def main():
     parser = argparse.ArgumentParser(description="Calibrate homography for SafeEdge")
     parser.add_argument("--source", default=0,
                         help="Camera source: device index, RTSP URL, or video file")
+    parser.add_argument("--image", default=None,
+                        help="Use a pre-captured image file instead of live camera")
     args = parser.parse_args()
 
-    try:
-        source = int(args.source)
-    except ValueError:
-        source = args.source
-
     print("Capturing reference frame…")
-    frame = capture_frame(source)
+    if args.image:
+        frame = cv2.imread(args.image)
+        if frame is None:
+            sys.exit(f"Cannot load image: {args.image!r}")
+    else:
+        try:
+            source = int(args.source)
+        except ValueError:
+            source = args.source
+        frame = capture_frame(source)
     display = frame.copy()
 
     cv2.namedWindow("SafeEdge Calibration", cv2.WINDOW_NORMAL)

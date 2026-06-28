@@ -70,7 +70,7 @@ Robustness ρ > 0 means the property is satisfied; ρ < 0 means violation. The m
 
 | Component | Details |
 |---|---|
-| Edge device | NVIDIA Jetson Orin Nano 8GB (JetPack 7.2) |
+| Edge device | NVIDIA Jetson Orin Nano 8GB (JetPack 6.2.1) |
 | Camera | Any USB webcam, RTSP WiFi camera, or 4K IP camera |
 | Connectivity | Tailscale VPN for remote access |
 | Local AI | Qwen2.5-3B via Ollama (fits in Orin RAM budget) |
@@ -106,6 +106,16 @@ python tools/calibrate_homography.py --source "rtsp://192.168.1.x:554/stream"
 ```
 
 Click each marker in order, enter the real-world coordinates when prompted. Saves `config/homography.npy`.
+
+**WSL2 note:** OpenCV's V4L2 backend has a buffer issue on WSL2+usbipd. Capture the reference frame with ffmpeg first, then pass it via `--image`:
+
+```bash
+ffmpeg -nostdin -f v4l2 -input_format mjpeg -video_size 640x480 \
+  -i /dev/video0 -frames:v 1 ~/calib_frame.jpg -y -loglevel error
+python tools/calibrate_homography.py --image ~/calib_frame.jpg
+```
+
+See `~/projects/WSL_USBcam_SETUP.md` for the full WSL2 camera setup guide.
 
 ### 2. Configure the camera source
 
@@ -144,7 +154,7 @@ python edge/main.py
 ## Jetson Orin deployment
 
 ```bash
-# On the Orin (JetPack 7.2)
+# On the Orin (JetPack 6.2.1)
 git clone git@github.com:stanleyoz/safeEdge.git
 cd safeEdge
 pip install -r requirements.txt
