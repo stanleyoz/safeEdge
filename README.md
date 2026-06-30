@@ -98,7 +98,7 @@ The edge posts JSON; the backend never imports the edge package (clean deploy sp
 | `/api/incidents` | GET | dashboard | Recent incident reports |
 | `/api/forecast` | GET | dashboard | Latest risk forecast |
 | `/api/events` | GET | dashboard | Recent events |
-| `/healthz` | GET | infra | Liveness probe (reports active store backend) |
+| `/healthz` | GET | infra / proof | Liveness probe **+ deployment self-report** — returns the live FC region/account/instance and active datastore (see §9.1) |
 | `/ws` | WS | dashboard | Live state stream |
 | `/` | GET | dashboard | UI |
 
@@ -239,22 +239,70 @@ python -m edge.main --source realsense --model yolov8s.pt --conf 0.25
 Full runbook (with the **proof-of-deployment checklist** the hackathon requires) is in **[`deploy/README.md`](deploy/README.md)**. Summary:
 
 ```bash
-# 1. Build amd64 image and push to ACR
-REGION=ap-southeast-1 NAMESPACE=yourns ./deploy/build_and_push.sh
-#    → set vars.image in deploy/s.yaml to the printed URI
+# 1. Build amd64 image and push to a public Docker Hub repo
+#    (ACR Enterprise costs a monthly fee; Docker Hub is free and the image
+#     carries no secrets. FC pulls the public image.)
+DOCKERHUB_USER=youruser ./deploy/build_and_push.sh
+#    → set vars.image in deploy/s.yaml to docker.io/youruser/safeedge-backend:latest
 
-# 2. Create a Tablestore instance (tables auto-create on first run)
+# 2. Create a Tablestore instance (CU mode, reserved CU = 0; tables auto-create)
 
 # 3. Deploy to Function Compute (Serverless Devs)
 export DASHSCOPE_API_KEY=sk-... TABLESTORE_ENDPOINT=... TABLESTORE_INSTANCE=safeedge
 export ALIBABA_CLOUD_ACCESS_KEY_ID=... ALIBABA_CLOUD_ACCESS_KEY_SECRET=...
-s deploy
+s deploy -t deploy/s.yaml -a default
 
-# 4. Verify
-curl -s https://<fc-url>/healthz      # {"store":"TablestoreStore", ...}
+# 4. Verify (see §9.1)
+curl -s https://<fc-url>/healthz
 ```
 
 Function Compute scales to zero (pay-per-request); Tablestore reserved throughput is 0 (pay-per-use).
+
+### 9.1 Deployment proof — the `/healthz` self-report
+
+The hackathon requires proof the backend runs on Alibaba Cloud. Rather than
+rely on a console screenshot, the **`/healthz` endpoint self-reports its live
+Function Compute identity** — a single `curl` of the public URL is reproducible
+proof that anyone (including judges) can run.
+
+```bash
+curl -s https://safeedg-backend-nkmqevdhff.ap-southeast-1.fcapp.run/healthz | python3 -m json.tool
+```
+```json
+{
+  "status": "ok",
+  "platform": "alibaba-function-compute",
+  "fc": {
+    "region": "ap-southeast-1",
+    "account_id": "5093982792814095",
+    "function": "safeedge-backend",
+    "instance": "c-6a43c32f-01471659-440efcec3955"
+  },
+  "store": "TablestoreStore",
+  "models": { "reasoning": "qwen-max", "vision": "qwen-vl-max" },
+  "ts": 1782825834.83
+}
+```
+
+**Why this is proof, not just a health check** — the `fc` block is *not*
+hardcoded. Function Compute injects `FC_REGION` / `FC_ACCOUNT_ID` /
+`FC_FUNCTION_NAME` / `FC_INSTANCE_ID` into every instance; `healthz()`
+(`backend/app.py`) reads them at request time:
+
+```python
+fc = {label: os.environ[var] for label, var in {
+    "region": "FC_REGION", "account_id": "FC_ACCOUNT_ID",
+    "function": "FC_FUNCTION_NAME", "instance": "FC_INSTANCE_ID",
+}.items() if os.environ.get(var)}
+```
+
+- On Alibaba FC → those vars exist → `platform: alibaba-function-compute` with a real instance ID.
+- On a laptop → they don't → `platform: local`, `fc: {}`.
+
+So the endpoint can only report a genuine FC instance identity if it is genuinely
+executing inside Alibaba Function Compute. Combined with `store: "TablestoreStore"`
+(proving the Alibaba Tablestore connection, vs the in-memory fallback), a single
+curl evidences **both** the compute and the datastore are Alibaba services.
 
 ---
 
