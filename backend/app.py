@@ -41,6 +41,18 @@ logger = logging.getLogger("safeedge.backend")
 
 app = FastAPI(title="SafeEdge Cloud Backend", version="1.0")
 
+# Allow the dashboard to be served from any origin (laptop / OSS / GitHub Pages)
+# and still call this API. The FC *.fcapp.run domain forces Content-Disposition:
+# attachment on HTML, so the dashboard is typically hosted off-FC and hits this
+# API cross-origin. (Tighten allow_origins for production.)
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 STATIC = Path(__file__).parent.parent / "dashboard" / "static"
 if STATIC.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
@@ -103,8 +115,16 @@ async def post_state(state: StatePush):
         "rho": state.rho.model_dump(),
         "signals": state.signals.model_dump(),
     })
+    # Persist latest state to the shared store so the dashboard (which polls
+    # REST on serverless FC, where WebSocket fan-out doesn't work) can read it.
+    _store.set_latest_state(payload)
     await _broadcast(payload)
     return {"ok": True}
+
+
+@app.get("/api/state/latest")
+async def get_latest_state():
+    return JSONResponse(_store.get_latest_state() or {})
 
 
 @app.post("/api/events")
@@ -175,7 +195,26 @@ async def get_forecast(refresh: bool = False):
 
 @app.get("/healthz")
 async def healthz():
-    return {"status": "ok", "store": type(_store).__name__, "ts": time.time()}
+    # Function Compute injects these env vars into every instance. Surfacing
+    # them makes /healthz self-prove it is running inside Alibaba FC — a simple
+    # curl of the public URL is then reproducible proof of deployment.
+    fc = {label: os.environ[var] for label, var in {
+        "region": "FC_REGION",
+        "account_id": "FC_ACCOUNT_ID",
+        "function": "FC_FUNCTION_NAME",
+        "instance": "FC_INSTANCE_ID",
+    }.items() if os.environ.get(var)}
+    return {
+        "status": "ok",
+        "platform": "alibaba-function-compute" if fc else "local",
+        "fc": fc,
+        "store": type(_store).__name__,
+        "models": {
+            "reasoning": os.environ.get("QWEN_REASONING_MODEL", "qwen-max"),
+            "vision": os.environ.get("QWEN_VISION_MODEL", "qwen-vl-max"),
+        },
+        "ts": time.time(),
+    }
 
 
 # ── background risk forecaster ─────────────────────────────────────────────────

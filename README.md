@@ -273,6 +273,8 @@ Function Compute scales to zero (pay-per-request); Tablestore reserved throughpu
 | Serverless Devs CLI (`s`) | ✅ installed (v3.1.10) |
 | Architecture diagram | ✅ `docs/architecture.html` |
 | **Backend LIVE on Function Compute** | ✅ deployed; image on Docker Hub; healthz + Qwen incident path verified in production |
+| Operator dashboard (REST polling) | ✅ live at FC root `/`; full clip→backend→Qwen→dashboard verified |
+| `/healthz` self-reports FC identity | ✅ `platform: alibaba-function-compute` (deployment proof) |
 | Local Qwen (Ollama) on Jetson | ⏳ pending install |
 | Live full-loop demo against deployed backend | ⏳ |
 | Submission video + proof recording | ⏳ |
