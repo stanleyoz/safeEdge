@@ -27,6 +27,8 @@ class Store(Protocol):
     def add_rho_sample(self, sample: dict) -> None: ...
     def set_forecast(self, forecast: dict) -> None: ...
     def get_forecast(self) -> Optional[dict]: ...
+    def set_latest_state(self, state: dict) -> None: ...
+    def get_latest_state(self) -> Optional[dict]: ...
 
 
 # ── In-memory (local dev) ─────────────────────────────────────────────────────
@@ -37,6 +39,7 @@ class InMemoryStore:
         self._incidents: list[dict] = []
         self._rho: list[dict] = []
         self._forecast: Optional[dict] = None
+        self._latest_state: Optional[dict] = None
         self._cap = cap
         logger.info("Store: in-memory (local dev mode)")
 
@@ -67,6 +70,12 @@ class InMemoryStore:
 
     def get_forecast(self) -> Optional[dict]:
         return self._forecast
+
+    def set_latest_state(self, state: dict) -> None:
+        self._latest_state = state
+
+    def get_latest_state(self) -> Optional[dict]:
+        return self._latest_state
 
 
 # ── Tablestore (Alibaba Cloud, prod) ──────────────────────────────────────────
@@ -164,22 +173,33 @@ class TablestoreStore:
                   [("pk", "rho"), ("ts", int(sample.get("timestamp", time.time()) * 1000))],
                   sample)
 
-    def set_forecast(self, forecast: dict) -> None:
+    def _kv_set(self, key: str, value: dict) -> None:
         from tablestore import Row
-        row = Row([("key", "forecast")], [("value", self._json.dumps(forecast))])
+        row = Row([("key", key)], [("value", self._json.dumps(value))])
         self._client.put_row("safeedge_kv", row)
 
-    def get_forecast(self) -> Optional[dict]:
-        from tablestore import SingleColumnCondition
+    def _kv_get(self, key: str) -> Optional[dict]:
         try:
-            _, row, _ = self._client.get_row("safeedge_kv", [("key", "forecast")])
+            _, row, _ = self._client.get_row("safeedge_kv", [("key", key)])
             if row is None:
                 return None
             cols = {c[0]: c[1] for c in row.attribute_columns}
             return self._json.loads(cols["value"]) if "value" in cols else None
         except Exception as exc:  # noqa: BLE001
-            logger.warning("get_forecast failed: %s", exc)
+            logger.warning("kv_get(%s) failed: %s", key, exc)
             return None
+
+    def set_forecast(self, forecast: dict) -> None:
+        self._kv_set("forecast", forecast)
+
+    def get_forecast(self) -> Optional[dict]:
+        return self._kv_get("forecast")
+
+    def set_latest_state(self, state: dict) -> None:
+        self._kv_set("latest_state", state)
+
+    def get_latest_state(self) -> Optional[dict]:
+        return self._kv_get("latest_state")
 
 
 # ── factory ───────────────────────────────────────────────────────────────────
