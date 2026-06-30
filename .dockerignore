@@ -1,0 +1,25 @@
+# Keep the cloud-backend image slim — exclude everything the edge needs.
+.venv/
+__pycache__/
+*.pyc
+.git/
+.env
+backend/.env
+
+# Edge-only assets (not used by the cloud backend)
+data/
+*.mp4
+*.pt
+*.engine
+*.onnx
+tools/
+tests/
+edge/camera/
+edge/detection/
+
+# Docs / scratch
+*.md
+notebooks/
+.vscode/
+.idea/
+deploy/

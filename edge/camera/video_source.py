@@ -1,13 +1,14 @@
 """
-Generic RGB video source — USB camera, RTSP stream, or video file.
-Replaces the RealSense node. No depth required.
+Camera sources: RealSenseSource (D455 depth), VideoSource (webcam/RTSP/file),
+MockCamera (synthetic scenario).
 
-MockCamera generates a synthetic near-miss scenario for offline dev/demo.
+CameraFrame carries optional metric depth so downstream can use it when
+available and fall back to homography when not.
 """
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
@@ -15,8 +16,9 @@ import numpy as np
 
 @dataclass
 class CameraFrame:
-    color_bgr: np.ndarray    # H×W×3 uint8
+    color_bgr: np.ndarray           # H×W×3 uint8
     timestamp: float
+    depth_m: np.ndarray | None = field(default=None)   # H×W float32, metres (RealSense only)
 
 
 class VideoSource:
@@ -43,6 +45,47 @@ class VideoSource:
 
     def stop(self) -> None:
         self._cap.release()
+
+
+class RealSenseSource:
+    """
+    Intel RealSense D455 — aligned color + metric depth at up to 30 fps.
+    Depth is aligned to the color frame so pixel coords are shared.
+    Provides camera intrinsics for accurate 3-D back-projection (no homography needed).
+    """
+
+    def __init__(self, width: int = 848, height: int = 480, fps: int = 30):
+        import pyrealsense2 as rs  # lazy — not available on dev machine
+        pipeline = rs.pipeline()
+        cfg = rs.config()
+        cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
+        cfg.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
+        profile = pipeline.start(cfg)
+        self._pipeline = pipeline
+        self._align = rs.align(rs.stream.color)
+        self._target_fps = fps
+
+        # Intrinsics from depth stream (used by SignalExtractor for back-projection)
+        intr = (profile.get_stream(rs.stream.depth)
+                       .as_video_stream_profile()
+                       .get_intrinsics())
+        self.fx, self.fy = intr.fx, intr.fy
+        self.cx, self.cy = intr.ppx, intr.ppy
+
+    def read(self) -> CameraFrame | None:
+        frames = self._pipeline.wait_for_frames(timeout_ms=5000)
+        aligned = self._align.process(frames)
+        color_frame = aligned.get_color_frame()
+        depth_frame = aligned.get_depth_frame()
+        if not color_frame or not depth_frame:
+            return None
+        color_bgr = np.asanyarray(color_frame.get_data())
+        depth_m = (np.asanyarray(depth_frame.get_data()).astype(np.float32)
+                   * depth_frame.get_units())
+        return CameraFrame(color_bgr=color_bgr, timestamp=time.time(), depth_m=depth_m)
+
+    def stop(self) -> None:
+        self._pipeline.stop()
 
 
 class MockCamera:

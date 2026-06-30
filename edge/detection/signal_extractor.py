@@ -41,8 +41,14 @@ class SignalBundle:
 
 class SignalExtractor:
     """
-    homography: 3×3 np.float64 mapping image coords → ground plane metres.
-    Load from config/homography.npy, or use IdentityHomography for mock mode.
+    Converts 2-D detections → metric (X, Z) ground positions.
+
+    Two positioning modes selected automatically:
+      depth mode   — RealSenseSource provides depth_m; uses back-projection
+                     with camera intrinsics (fx, fy, cx, cy). No homography.
+      homography   — webcam or mock; projects foot point through H matrix.
+
+    Pass intrinsics=(fx, fy, cx, cy) when constructing for depth mode.
     """
 
     def __init__(
@@ -50,21 +56,35 @@ class SignalExtractor:
         homography: np.ndarray,
         history_frames: int = 6,
         fps: float = 15.0,
+        intrinsics: tuple[float, float, float, float] | None = None,
     ):
         self._H = homography
         self._vel_est = VelocityEstimator(history_frames, fps)
+        # Unpack (fx, fy, cx, cy) for depth back-projection
+        if intrinsics is not None:
+            self._fx, self._fy, self._cx, self._cy = intrinsics
+        else:
+            self._fx = None
 
-    def extract(self, detections: list[RawDetection]) -> SignalBundle:
+    def extract(
+        self,
+        detections: list[RawDetection],
+        depth_m: np.ndarray | None = None,
+    ) -> SignalBundle:
         pedestrians: list[TrackedObject] = []
         vehicles: list[TrackedObject] = []
         active_ids: set[int] = set()
 
+        use_depth = depth_m is not None and self._fx is not None
+
         for det in detections:
-            ground_xz = self._foot_to_ground(det.bbox_xyxy)
+            if use_depth:
+                ground_xz = self._foot_to_ground_depth(det.bbox_xyxy, depth_m)
+            else:
+                ground_xz = self._foot_to_ground_homography(det.bbox_xyxy)
             if ground_xz is None:
                 continue
 
-            # Store as [X, 0, Z] so trajectory module (uses xyz[[0,2]]) works unchanged
             xyz = np.array([ground_xz[0], 0.0, ground_xz[1]], dtype=np.float32)
 
             active_ids.add(det.track_id)
@@ -79,7 +99,7 @@ class SignalExtractor:
 
         self._vel_est.prune(active_ids)
 
-        d_min    = _min_ped_veh_distance(pedestrians, vehicles)
+        d_min     = _min_ped_veh_distance(pedestrians, vehicles)
         v_veh_max = max((float(np.linalg.norm(v.vel)) for v in vehicles), default=0.0)
 
         return SignalBundle(
@@ -91,16 +111,39 @@ class SignalExtractor:
 
     # ── Private ──────────────────────────────────────────────────────────────
 
-    def _foot_to_ground(self, bbox: np.ndarray) -> np.ndarray | None:
-        """Project bbox bottom-centre (foot of object) through homography → [X, Z] metres."""
+    def _foot_to_ground_homography(self, bbox: np.ndarray) -> np.ndarray | None:
+        """Project bbox bottom-centre through homography → [X, Z] metres."""
         x1, y1, x2, y2 = bbox.astype(float)
         foot_u = (x1 + x2) / 2.0
-        foot_v = float(y2)           # bottom edge = ground contact point
+        foot_v = float(y2)
 
         pt = self._H @ np.array([foot_u, foot_v, 1.0])
         if abs(pt[2]) < 1e-6:
             return None
         return (pt[:2] / pt[2]).astype(np.float32)
+
+    def _foot_to_ground_depth(
+        self, bbox: np.ndarray, depth_m: np.ndarray
+    ) -> np.ndarray | None:
+        """Back-project foot point using metric depth + camera intrinsics → [X, Z] metres."""
+        x1, y1, x2, y2 = bbox.astype(int)
+        foot_u = int((x1 + x2) / 2)
+        foot_v = min(int(y2), depth_m.shape[0] - 1)
+        foot_u = max(0, min(foot_u, depth_m.shape[1] - 1))
+
+        # Median over a small patch — robust to edge noise
+        v1 = max(0, foot_v - 3);  v2 = min(depth_m.shape[0], foot_v + 4)
+        u1 = max(0, foot_u - 3);  u2 = min(depth_m.shape[1], foot_u + 4)
+        patch = depth_m[v1:v2, u1:u2]
+        valid = patch[patch > 0.1]
+        if len(valid) == 0:
+            return None
+        z = float(np.median(valid))
+        if not (0.3 < z < 15.0):   # D455 reliable range
+            return None
+
+        x = (foot_u - self._cx) * z / self._fx
+        return np.array([x, z], dtype=np.float32)
 
 
 def _min_ped_veh_distance(

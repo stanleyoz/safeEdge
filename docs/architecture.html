@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafeEdge — System Architecture</title>
+<style>
+  :root {
+    --edge:#0b3d2e;   --edge-line:#1f9d6b;  --edge-fg:#e8fff5;
+    --ali:#16264a;    --ali-line:#3a7bd5;   --ali-fg:#eaf2ff;
+    --qwen:#34163f;   --qwen-line:#b06fe0;  --qwen-fg:#f6eaff;
+    --bg:#0e1116;     --panel:#161b22;      --ink:#e6edf3;
+    --muted:#9aa7b4;  --rule:#2b3340;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  a { color:#6cb6ff; }
+  header.page {
+    padding:2rem 1.5rem 1rem; border-bottom:1px solid var(--rule);
+    max-width:1100px; margin:0 auto;
+  }
+  header.page h1 { margin:0 0 .25rem; font-size:1.7rem; }
+  header.page p { margin:.25rem 0; color:var(--muted); max-width:70ch; }
+  main { max-width:1100px; margin:0 auto; padding:1.5rem; }
+  h2 { font-size:1.25rem; margin:2.25rem 0 .75rem; padding-bottom:.3rem;
+       border-bottom:1px solid var(--rule); }
+  .skip { position:absolute; left:-999px; }
+  .skip:focus { left:1rem; top:1rem; background:#fff; color:#000; padding:.5rem 1rem;
+                border-radius:6px; z-index:10; }
+
+  /* ── tier columns ── */
+  .tiers { display:grid; gap:1rem; grid-template-columns:1fr; }
+  @media (min-width:900px){ .tiers { grid-template-columns:repeat(3,1fr); } }
+
+  .tier { border-radius:12px; padding:1rem; border:2px solid; }
+  .tier--edge { background:var(--edge); border-color:var(--edge-line); color:var(--edge-fg); }
+  .tier--ali  { background:var(--ali);  border-color:var(--ali-line);  color:var(--ali-fg); }
+  .tier--qwen { background:var(--qwen); border-color:var(--qwen-line); color:var(--qwen-fg); }
+  .tier h3 { margin:.1rem 0 .2rem; font-size:1.05rem; }
+  .tier .sub { font-size:.8rem; opacity:.85; margin:0 0 .8rem; }
+
+  ol.flow { list-style:none; margin:0; padding:0; counter-reset:step; }
+  ol.flow li {
+    position:relative; background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.18); border-radius:9px;
+    padding:.55rem .7rem .55rem .7rem; margin:0 0 .45rem;
+  }
+  ol.flow.stepped li { padding-left:2.2rem; counter-increment:step; }
+  ol.flow.stepped li::before {
+    content:counter(step); position:absolute; left:.55rem; top:.55rem;
+    width:1.2rem; height:1.2rem; border-radius:50%;
+    background:rgba(255,255,255,.9); color:#000; font-size:.72rem; font-weight:700;
+    display:grid; place-items:center;
+  }
+  /* arrow between sequential boxes */
+  ol.flow li:not(:last-child)::after {
+    content:"↓"; display:block; text-align:center; line-height:1;
+    margin:.35rem 0 -.15rem; opacity:.6; font-size:.95rem;
+  }
+  .comp { font-weight:600; }
+  .comp .file { display:block; font-weight:400; font-size:.74rem; opacity:.8;
+                font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .comp .role { display:block; font-weight:400; font-size:.82rem; opacity:.92; }
+
+  /* ── connections between tiers ── */
+  .links { margin:1.25rem 0 0; }
+  .links h3 { font-size:1rem; margin:0 0 .5rem; color:var(--muted); }
+  table.links-tbl { width:100%; border-collapse:collapse; font-size:.9rem; }
+  table.links-tbl caption { text-align:left; color:var(--muted); padding:.25rem 0 .5rem; }
+  table.links-tbl th, table.links-tbl td {
+    text-align:left; padding:.5rem .6rem; border-bottom:1px solid var(--rule); vertical-align:top;
+  }
+  table.links-tbl th { color:var(--muted); font-weight:600; }
+  code { background:rgba(255,255,255,.08); padding:.05rem .35rem; border-radius:5px;
+         font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em; }
+  .dir { white-space:nowrap; color:#6cb6ff; font-weight:700; }
+
+  /* ── rationale + stack ── */
+  table.grid { width:100%; border-collapse:collapse; margin-top:.5rem; }
+  table.grid th, table.grid td { text-align:left; padding:.6rem .7rem;
+    border-bottom:1px solid var(--rule); vertical-align:top; }
+  table.grid th { color:var(--muted); width:30%; }
+  ul.stack { columns:2; gap:2rem; padding-left:1.1rem; }
+  @media (max-width:640px){ ul.stack { columns:1; } }
+  ul.stack li { margin:.2rem 0; }
+  .legend { display:flex; gap:1rem; flex-wrap:wrap; margin:.5rem 0 0; font-size:.85rem; }
+  .legend span { display:inline-flex; align-items:center; gap:.4rem; }
+  .swatch { width:.9rem; height:.9rem; border-radius:3px; border:2px solid; display:inline-block; }
+  footer { max-width:1100px; margin:0 auto; padding:1rem 1.5rem 3rem; color:var(--muted);
+           font-size:.85rem; border-top:1px solid var(--rule); }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="page">
+  <h1>SafeEdge — System Architecture</h1>
+  <p><strong>Formally-verified edge safety agent</strong> (Hackathon Track 5: EdgeAgent).
+     A real-time Signal-Temporal-Logic monitor runs autonomously on a Jetson Orin NX,
+     while a Qwen-powered cloud brain deployed on Alibaba Cloud adds multimodal incident
+     reporting, adaptive safety policy, and predictive risk forecasting.</p>
+  <p>The edge loop is safety-critical and <strong>never blocks on the cloud</strong> — if the
+     network or cloud is unavailable, the Jetson keeps protecting people. The cloud adds
+     intelligence when available.</p>
+  <div class="legend" aria-hidden="true">
+    <span><i class="swatch" style="background:var(--edge);border-color:var(--edge-line)"></i> Edge (Jetson)</span>
+    <span><i class="swatch" style="background:var(--ali);border-color:var(--ali-line)"></i> Alibaba Cloud</span>
+    <span><i class="swatch" style="background:var(--qwen);border-color:var(--qwen-line)"></i> Qwen Cloud</span>
+  </div>
+</header>
+
+<main id="main">
+
+  <h2>1. System overview — three tiers</h2>
+  <div class="tiers">
+
+    <section class="tier tier--edge" aria-labelledby="t-edge">
+      <h3 id="t-edge">🛰️ Edge — Jetson Orin NX 16GB</h3>
+      <p class="sub">Real-time, offline-capable safety loop @ 30&nbsp;Hz</p>
+      <ol class="flow" aria-label="Edge processing pipeline, top to bottom">
+        <li><span class="comp">Intel RealSense D455
+            <span class="role">RGB + aligned depth</span>
+            <span class="file">camera/video_source.py</span></span></li>
+        <li><span class="comp">YOLOv8s — GPU / TensorRT
+            <span class="role">person &amp; vehicle detection</span>
+            <span class="file">detection/detector.py</span></span></li>
+        <li><span class="comp">ByteTrack tracker
+            <span class="role">multi-object tracking</span>
+            <span class="file">detection/tracker.py</span></span></li>
+        <li><span class="comp">Signal Extractor
+            <span class="role">metric d_min · v_veh · d_pred</span>
+            <span class="file">detection/signal_extractor.py</span></span></li>
+        <li><span class="comp">STL Monitor (rtamt)
+            <span class="role">robustness ρ₁–ρ₅ @ 30 Hz</span>
+            <span class="file">safety/stl_monitor.py</span></span></li>
+        <li><span class="comp">Intervention Engine
+            <span class="role">AWARENESS · WARNING · EMERGENCY</span>
+            <span class="file">safety/intervention.py</span></span></li>
+        <li><span class="comp">Local Qwen2.5-VL (Ollama)
+            <span class="role">≤3 s on-device scene note</span>
+            <span class="file">local_ai/qwen_local.py</span></span></li>
+        <li><span class="comp">Cloud Client
+            <span class="role">non-blocking HTTP to backend</span>
+            <span class="file">edge/cloud_client.py</span></span></li>
+      </ol>
+    </section>
+
+    <section class="tier tier--ali" aria-labelledby="t-ali">
+      <h3 id="t-ali">☁️ Alibaba Cloud — Function Compute 3.0</h3>
+      <p class="sub">Serverless container (scale-to-zero) — the deployed backend</p>
+      <ol class="flow" aria-label="Alibaba Cloud backend components">
+        <li><span class="comp">FastAPI Backend
+            <span class="role">REST ingest + WebSocket + dashboard</span>
+            <span class="file">backend/app.py</span></span></li>
+        <li><span class="comp">Policy Manager skill
+            <span class="role">adaptive STL parameter patches</span>
+            <span class="file">cloud/policy_manager.py</span></span></li>
+        <li><span class="comp">Incident Reporter skill
+            <span class="role">multimodal safety reports</span>
+            <span class="file">cloud/incident_reporter.py</span></span></li>
+        <li><span class="comp">Risk Forecaster skill
+            <span class="role">hourly high-risk window prediction</span>
+            <span class="file">cloud/risk_forecaster.py</span></span></li>
+        <li><span class="comp">Tablestore (datastore)
+            <span class="role">events · incidents · ρ-history · forecasts</span>
+            <span class="file">backend/store.py</span></span></li>
+        <li><span class="comp">Live Dashboard
+            <span class="role">operator UI over WebSocket</span>
+            <span class="file">dashboard/static/</span></span></li>
+      </ol>
+    </section>
+
+    <section class="tier tier--qwen" aria-labelledby="t-qwen">
+      <h3 id="t-qwen">🧠 Qwen Cloud — DashScope (intl)</h3>
+      <p class="sub">Flagship models via OpenAI-compatible endpoint</p>
+      <ol class="flow" aria-label="Qwen Cloud models">
+        <li><span class="comp">qwen-max
+            <span class="role">policy + forecast reasoning (JSON)</span></span></li>
+        <li><span class="comp">qwen-vl-max
+            <span class="role">multimodal incident reports</span></span></li>
+        <li><span class="comp">qwen-turbo
+            <span class="role">text-only incident fallback</span></span></li>
+      </ol>
+      <p class="sub" style="margin-top:.8rem">Called by the cloud skills via
+        <span class="file" style="font-size:.78rem">cloud/qwen_client.py</span></p>
+    </section>
+  </div>
+
+  <div class="links">
+    <h3>Cross-tier connections</h3>
+    <table class="links-tbl">
+      <caption>How the tiers communicate (all edge→cloud calls are non-blocking with hard timeouts)</caption>
+      <thead>
+        <tr><th scope="col">From</th><th scope="col">Direction</th><th scope="col">To</th><th scope="col">Payload / purpose</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Edge · Cloud Client</td><td class="dir">→</td><td>Alibaba · FastAPI</td><td><code>POST /api/state</code> — throttled live state for dashboard</td></tr>
+        <tr><td>Edge · Cloud Client</td><td class="dir">→</td><td>Alibaba · FastAPI</td><td><code>POST /api/events</code> — intervention event + camera frame</td></tr>
+        <tr><td>Edge · Cloud Client</td><td class="dir">→</td><td>Alibaba · FastAPI</td><td><code>POST /api/policy/evaluate</code> — ρ-summary + current params</td></tr>
+        <tr><td>Alibaba · FastAPI</td><td class="dir">→</td><td>Edge · STL Monitor</td><td>STL parameter patch → <code>apply_cloud_params()</code> (hot-swap)</td></tr>
+        <tr><td>Alibaba · Skills</td><td class="dir">→</td><td>Qwen Cloud</td><td>qwen-max / qwen-vl-max / qwen-turbo inference</td></tr>
+        <tr><td>Alibaba · Dashboard</td><td class="dir">↔</td><td>Operator browser</td><td>WebSocket live state &amp; incident push</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>2. Safety event → Qwen incident report</h2>
+  <ol class="flow stepped" aria-label="Incident reporting sequence">
+    <li>D455 streams an RGB-D frame; the edge pipeline detects, tracks, and extracts metric signals.</li>
+    <li>STL Monitor computes robustness ρ for the spec “keep pedestrians safe from moving vehicles”.</li>
+    <li>When <strong>ρ &lt; 0</strong> (specification violated), the Intervention Engine raises a WARNING/EMERGENCY event.</li>
+    <li>Cloud Client sends <code>POST /api/events</code> with the event + JPEG frame — <em>non-blocking</em>.</li>
+    <li>The backend passes image + structured STL data to <strong>qwen-vl-max</strong>.</li>
+    <li>Qwen returns a natural-language incident report; the backend persists it to Tablestore.</li>
+    <li>The dashboard receives the new incident over WebSocket. Meanwhile the edge keeps running at 30 Hz regardless of cloud latency.</li>
+  </ol>
+
+  <h2>3. Adaptive policy loop (closed-loop, edge ⇄ cloud)</h2>
+  <ol class="flow stepped" aria-label="Adaptive policy sequence, repeats every five minutes">
+    <li>Every ~5 min the edge sends <code>POST /api/policy/evaluate</code> with the ρ-summary, recent event counts, and current STL parameters.</li>
+    <li>The Policy Manager asks <strong>qwen-max</strong> to balance safety against false-alarm rate.</li>
+    <li>Qwen returns a JSON patch, e.g. <code>{ "phi2": { "proximity_zone": 5.5 }, "phi4": { "stop_window": 65 } }</code>.</li>
+    <li>The backend returns the patch; the edge applies it via <code>apply_cloud_params()</code>, hot-swapping the formal safety thresholds live.</li>
+  </ol>
+
+  <h2>4. Why this architecture</h2>
+  <table class="grid">
+    <tbody>
+      <tr><th scope="row">Real-time safety</th>
+          <td>STL robustness is computed on-device at 30 Hz — deterministic and formally grounded. No LLM sits in the safety-critical path.</td></tr>
+      <tr><th scope="row">Autonomy / resilience</th>
+          <td><code>cloud_client.py</code> is fire-and-forget with hard timeouts on a worker thread; cloud outages never stall the safety loop.</td></tr>
+      <tr><th scope="row">Sophisticated Qwen use</th>
+          <td>Three distinct custom skills — multimodal reporting (qwen-vl-max) plus reasoning (qwen-max) for policy &amp; forecasting — returning structured JSON applied back to the formal monitor.</td></tr>
+      <tr><th scope="row">Alibaba Cloud backend</th>
+          <td>FastAPI on Function Compute (serverless, scale-to-zero) + Tablestore datastore — the deployed backend the hackathon requires.</td></tr>
+      <tr><th scope="row">Domain-portable</th>
+          <td>Subjects/objects, signals, STL specs, and prompts are config-driven; the same pipeline retargets to other vision-safety domains (e.g. warehouse forklift–pedestrian).</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. Technology stack</h2>
+  <ul class="stack">
+    <li><strong>Edge:</strong> Jetson Orin NX 16GB · JetPack 6.2</li>
+    <li>YOLOv8s (Ultralytics, GPU) · ByteTrack (supervision)</li>
+    <li><code>rtamt</code> Signal Temporal Logic engine</li>
+    <li>Intel RealSense D455 (RGB-D) · Ollama (local Qwen2.5-VL)</li>
+    <li><strong>Cloud:</strong> Alibaba Function Compute 3.0 · Tablestore · ACR</li>
+    <li>FastAPI · Uvicorn · WebSocket</li>
+    <li><strong>AI:</strong> Qwen Cloud / DashScope (intl)</li>
+    <li>qwen-max · qwen-vl-max · qwen-turbo · local qwen2.5-vl</li>
+  </ul>
+
+</main>
+
+<footer>
+  SafeEdge · Track 5 EdgeAgent · Global AI Hackathon with Qwen Cloud.
+  This document is self-contained (no external assets) and renders offline.
+</footer>
+</body>
+</html>

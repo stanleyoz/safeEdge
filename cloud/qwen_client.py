@@ -12,7 +12,9 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+# International (intl) endpoint is the hackathon default. Override with
+# DASHSCOPE_BASE_URL for the mainland-China endpoint if needed.
+DEFAULT_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 
 
 class QwenCloudClient:
@@ -112,9 +114,11 @@ class QwenCloudClient:
         if not api_key:
             logger.error("DASHSCOPE_API_KEY not set")
             return None
+        base_url = os.environ.get("DASHSCOPE_BASE_URL", DEFAULT_BASE_URL)
         try:
             from openai import OpenAI
-            return OpenAI(api_key=api_key, base_url=DASHSCOPE_BASE_URL)
+            logger.info("Qwen Cloud client → %s", base_url)
+            return OpenAI(api_key=api_key, base_url=base_url)
         except ImportError:
             logger.error("openai package not installed")
             return None
