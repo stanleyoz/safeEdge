@@ -12,7 +12,9 @@ from edge.detection.signal_extractor import RawDetection
 
 class ObjectTracker:
     def __init__(self, lost_track_buffer: int = 30):
-        self._tracker = sv.ByteTracker(
+        # supervision ≥0.22 renamed ByteTracker → ByteTrack
+        TrackerCls = getattr(sv, "ByteTrack", None) or sv.ByteTracker
+        self._tracker = TrackerCls(
             track_activation_threshold=0.4,
             lost_track_buffer=lost_track_buffer,
             minimum_matching_threshold=0.8,

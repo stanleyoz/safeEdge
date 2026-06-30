@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Optional
 
 from cloud.qwen_client import QwenCloudClient
@@ -34,7 +35,8 @@ If no changes needed, respond with: {}
 
 
 class PolicyManager:
-    def __init__(self, model: str = "qwen-plus"):
+    def __init__(self, model: Optional[str] = None):
+        model = model or os.environ.get("QWEN_REASONING_MODEL", "qwen-max")
         self._client = QwenCloudClient(model=model, max_tokens=512)
 
     def request_update(

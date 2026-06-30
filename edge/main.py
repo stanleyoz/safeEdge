@@ -7,20 +7,20 @@ safety loop.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import signal
 import time
 from pathlib import Path
 
+import cv2
 import numpy as np
 import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from edge.camera.video_source import VideoSource, MockCamera
+from edge.camera.video_source import VideoSource, MockCamera, RealSenseSource
 from edge.detection.detector import ObjectDetector
 from edge.detection.tracker import ObjectTracker
 from edge.detection.signal_extractor import SignalExtractor, mock_homography
@@ -41,8 +41,12 @@ logging.basicConfig(
 logger = logging.getLogger("safeEdge.main")
 
 
+SOURCE_CHOICES = ("mock", "webcam", "realsense", "file")
+
+
 class SafeEdge:
-    def __init__(self, mock: bool = False):
+    def __init__(self, source: str = "mock", file_path: str | None = None,
+                 model: str = "yolov8n.pt", conf: float = 0.4):
         self._running = False
 
         with open(CFG_CAMERA) as f:
@@ -50,20 +54,42 @@ class SafeEdge:
         with open(CFG_QWEN) as f:
             qwen_cfg = yaml.safe_load(f)
 
-        use_mock = mock or cam_cfg.get("mock", {}).get("enabled", False)
         fps = cam_cfg.get("target_fps", 15.0)
+        intrinsics = None   # set only for realsense
 
-        if use_mock:
+        if source == "mock":
             self._camera = MockCamera(fps=fps)
             homography = mock_homography()
             logger.info("Camera: Mock (synthetic scenario)")
-        else:
-            source = cam_cfg["source"]
-            self._camera = VideoSource(source, target_fps=fps)
+
+        elif source == "realsense":
+            self._camera = RealSenseSource()
+            homography = mock_homography()   # fallback; not used when depth_m present
+            intrinsics = (
+                self._camera.fx, self._camera.fy,
+                self._camera.cx, self._camera.cy,
+            )
+            logger.info(
+                "Camera: RealSense D455 | fx=%.1f fy=%.1f cx=%.1f cy=%.1f",
+                *intrinsics,
+            )
+
+        elif source == "file":
+            if not file_path:
+                raise ValueError("--source file requires --file-path")
+            if not Path(file_path).exists():
+                raise FileNotFoundError(f"Video file not found: {file_path}")
+            self._camera = VideoSource(file_path, target_fps=fps)
+            homography = mock_homography()   # no calibration needed for offline analysis
+            logger.info("Camera: file %s | homography: mock (offline mode)", file_path)
+
+        else:  # webcam
+            cv_source = cam_cfg.get("source", 0)
+            self._camera = VideoSource(cv_source, target_fps=fps)
             hfile = cam_cfg.get("homography_file")
             if hfile and Path(hfile).exists():
                 homography = np.load(hfile)
-                logger.info("Camera: %s | homography loaded from %s", source, hfile)
+                logger.info("Camera: webcam %s | homography loaded from %s", cv_source, hfile)
             else:
                 raise RuntimeError(
                     f"Homography file not found: {hfile}\n"
@@ -71,9 +97,9 @@ class SafeEdge:
                 )
 
         self._fps       = fps
-        self._detector  = ObjectDetector(device="cuda")
+        self._detector  = ObjectDetector(model_path=model, confidence=conf, device="auto")
         self._tracker   = ObjectTracker()
-        self._extractor = SignalExtractor(homography, fps=fps)
+        self._extractor = SignalExtractor(homography, fps=fps, intrinsics=intrinsics)
         self._stl       = STLMonitor(CFG_STL)
         self._engine    = InterventionEngine(
             upgrade_hold=3,
@@ -86,27 +112,35 @@ class SafeEdge:
             timeout_s=qwen_cfg["local"]["timeout_s"],
         )
 
-        self._cloud_enabled = os.environ.get("CLOUD_REPORTING_ENABLED", "true").lower() == "true"
+        # Cloud backend (Alibaba Cloud) — enabled iff SAFEEDGE_CLOUD_URL is set.
+        # The Qwen skills now live in the cloud backend; the edge just POSTs to
+        # it over HTTP. With no URL set, the edge runs fully standalone/offline.
+        cloud_url = os.environ.get("SAFEEDGE_CLOUD_URL", "").strip()
+        self._cloud_enabled = bool(cloud_url)
         if self._cloud_enabled:
-            from cloud.policy_manager   import PolicyManager
-            from cloud.incident_reporter import IncidentReporter
-            from cloud.risk_forecaster   import RiskForecaster
-            self._policy_mgr   = PolicyManager()
-            self._incident_rpt = IncidentReporter(
-                location=os.environ.get("LOCATION_LABEL", "Car Park")
-            )
-            self._risk_fcst    = RiskForecaster()
+            from edge.cloud_client import CloudClient
+            self._cloud = CloudClient(base_url=cloud_url)
+            logger.info("Cloud backend enabled → %s", cloud_url)
         else:
-            self._policy_mgr   = None
-            self._incident_rpt = None
-            self._risk_fcst    = None
+            self._cloud = None
+            logger.info("Cloud backend disabled (SAFEEDGE_CLOUD_URL unset) — edge standalone")
 
         self._event_log: list[dict] = []
         self._last_policy_update = 0.0
         self._frame_t = 0
         self._last_frame_bgr: np.ndarray | None = None
+        self._last_interp: str = ""
+        self._fps_measured: float = 0.0
 
         self._ws_publish = None   # set by dashboard.app
+
+        # Preview window — disabled if no display available
+        self._preview = os.environ.get("DISPLAY") is not None or \
+                        os.environ.get("WAYLAND_DISPLAY") is not None
+        if self._preview:
+            cv2.namedWindow("SafeEdge", cv2.WINDOW_NORMAL)
+            cv2.resizeWindow("SafeEdge", 960, 540)
+            logger.info("Preview window enabled")
 
         signal.signal(signal.SIGINT,  self._shutdown)
         signal.signal(signal.SIGTERM, self._shutdown)
@@ -128,7 +162,7 @@ class SafeEdge:
 
             raw_dets = self._detector.detect(frame.color_bgr)
             tracked  = self._tracker.update(raw_dets, frame.color_bgr.shape[:2])
-            bundle   = self._extractor.extract(tracked)
+            bundle   = self._extractor.extract(tracked, depth_m=frame.depth_m)
 
             d_pred = predict_min_distance(bundle.pedestrians, bundle.vehicles, horizon_s=4.0)
 
@@ -143,25 +177,120 @@ class SafeEdge:
             event = self._engine.process(state)
 
             if event is not None:
-                interp = self._local_ai.interpret(state)
-                logger.info("[L%d] %s | %s", state.intervention_level, event.message, interp)
+                self._last_interp = self._local_ai.interpret(state)
+                logger.info("[L%d] %s | %s", state.intervention_level, event.message, self._last_interp)
+
+            if self._preview:
+                self._show_preview(frame, tracked, bundle, state, frame.depth_m)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    self._running = False
 
             if self._ws_publish:
                 self._ws_publish(state, frame.color_bgr, event)
 
-            if self._cloud_enabled and time.monotonic() - self._last_policy_update > 300:
-                asyncio.create_task(self._cloud_policy_update())
-                self._last_policy_update = time.monotonic()
+            if self._cloud is not None:
+                # Throttled live-state push for the cloud dashboard (non-blocking)
+                self._cloud.push_state(state, frame.color_bgr)
+                # Periodic Qwen policy re-evaluation (non-blocking; applies patch on reply)
+                if time.monotonic() - self._last_policy_update > 300:
+                    self._last_policy_update = time.monotonic()
+                    self._request_cloud_policy()
 
             self._frame_t += 1
 
             elapsed = time.monotonic() - t0
+            self._fps_measured = 1.0 / elapsed if elapsed > 0 else self._fps
             sleep_s = max(0.0, (1.0 / self._fps) - elapsed)
             if sleep_s > 0:
                 time.sleep(sleep_s)
 
         self._camera.stop()
+        if self._cloud is not None:
+            self._cloud.close()
+        if self._preview:
+            cv2.destroyAllWindows()
         logger.info("SafeEdge stopped")
+
+    # ── Preview window ───────────────────────────────────────────────────────
+
+    def _show_preview(self, frame, tracked, bundle, state, depth_m) -> None:
+        canvas = frame.color_bgr.copy()
+        h, w = canvas.shape[:2]
+
+        # Intervention level → banner colour
+        LEVEL_COLOUR = {
+            0: (40, 180, 40),    # green  — safe
+            1: (0, 165, 255),    # orange — awareness
+            2: (0, 60, 255),     # red    — warning
+            3: (0, 0, 200),      # dark red — emergency
+        }
+        LEVEL_LABEL = {0: "SAFE", 1: "AWARENESS", 2: "WARNING", 3: "EMERGENCY"}
+        lvl   = state.intervention_level
+        colour = LEVEL_COLOUR.get(lvl, (40, 180, 40))
+
+        # Top banner
+        cv2.rectangle(canvas, (0, 0), (w, 36), colour, -1)
+        cv2.putText(canvas, f"SafeEdge  {LEVEL_LABEL.get(lvl,'?')}  |  "
+                            f"fps:{self._fps_measured:.0f}  frame:{self._frame_t}",
+                    (8, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 255), 2)
+
+        # Detection boxes
+        for det in tracked:
+            x1, y1, x2, y2 = det.bbox_xyxy.astype(int)
+            box_col = (0, 220, 60) if det.label == "person" else (220, 80, 0)
+            cv2.rectangle(canvas, (x1, y1), (x2, y2), box_col, 2)
+            cv2.putText(canvas, f"{det.label} #{det.track_id}",
+                        (x1, max(y1 - 6, 12)), cv2.FONT_HERSHEY_PLAIN, 1.1, box_col, 1)
+
+        # Distance line between closest ped-veh pair (image space approximation)
+        if bundle.pedestrians and bundle.vehicles:
+            # Find the closest pair by world distance and draw line between bbox centres
+            best_d, best_p, best_v = float("inf"), None, None
+            for p in bundle.pedestrians:
+                for v in bundle.vehicles:
+                    d = float(np.linalg.norm(p.xyz[[0, 2]] - v.xyz[[0, 2]]))
+                    if d < best_d:
+                        best_d, best_p, best_v = d, p, v
+
+            # Find matching detections for bbox centres
+            def _centre(track_id):
+                for det in tracked:
+                    if det.track_id == track_id:
+                        x1, y1, x2, y2 = det.bbox_xyxy.astype(int)
+                        return ((x1 + x2) // 2, (y1 + y2) // 2)
+                return None
+
+            pc = _centre(best_p.track_id) if best_p else None
+            vc = _centre(best_v.track_id) if best_v else None
+            if pc and vc:
+                line_col = (0, 255, 0) if best_d > 3.0 else ((0, 165, 255) if best_d > 1.5 else (0, 0, 255))
+                cv2.line(canvas, pc, vc, line_col, 2)
+                mid = ((pc[0] + vc[0]) // 2, (pc[1] + vc[1]) // 2 - 8)
+                cv2.putText(canvas, f"{best_d:.1f}m", mid,
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, line_col, 2)
+
+        # Bottom HUD
+        rho3_str = f"{state.rho3:.2f}" if state.rho3 is not None else "n/a"
+        hud = (f"d_min:{bundle.d_min:.2f}m  v_max:{bundle.v_veh_max:.2f}m/s  "
+               f"rho1:{state.rho1:.2f}  rho2:{state.rho2:.2f}  rho3:{rho3_str}")
+        cv2.rectangle(canvas, (0, h - 52), (w, h), (20, 20, 20), -1)
+        cv2.putText(canvas, hud, (8, h - 30),
+                    cv2.FONT_HERSHEY_PLAIN, 1.0, (200, 200, 200), 1)
+        if self._last_interp:
+            cv2.putText(canvas, f"AI: {self._last_interp[:80]}",
+                        (8, h - 10), cv2.FONT_HERSHEY_PLAIN, 0.95, (100, 220, 255), 1)
+
+        # Depth thumbnail (top-right corner, RealSense only)
+        if depth_m is not None:
+            thumb_w, thumb_h = 240, 135
+            d_vis = np.clip(depth_m / 6.0, 0, 1)
+            d_colour = cv2.applyColorMap((d_vis * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
+            d_thumb  = cv2.resize(d_colour, (thumb_w, thumb_h))
+            canvas[40:40 + thumb_h, w - thumb_w:w] = d_thumb
+            cv2.putText(canvas, "depth (0-6m)", (w - thumb_w + 4, 54),
+                        cv2.FONT_HERSHEY_PLAIN, 0.9, (255, 255, 255), 1)
+
+        cv2.imshow("SafeEdge", canvas)
 
     # ── Event callbacks ──────────────────────────────────────────────────────
 
@@ -175,38 +304,25 @@ class SafeEdge:
             "rho_min": event.rho_min,
             "message": event.message,
         })
-        if self._incident_rpt and event.new_level >= 2:
-            asyncio.create_task(
-                self._async_incident_report(event, self._last_frame_bgr)
-            )
+        # Ship the event to the cloud backend — WARNING+ events trigger a
+        # Qwen-VL incident report there. Non-blocking; safe if cloud is down.
+        if self._cloud is not None:
+            self._cloud.push_event(event, self._last_frame_bgr)
 
-    async def _async_incident_report(
-        self, event: InterventionEvent, frame_bgr: np.ndarray | None
-    ) -> None:
-        report = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: self._incident_rpt.report(event, frame_bgr)
-        )
-        if report:
-            logger.info("INCIDENT REPORT:\n%s", report)
-
-    async def _cloud_policy_update(self) -> None:
-        if self._policy_mgr is None or len(self._event_log) < 3:
+    def _request_cloud_policy(self) -> None:
+        if self._cloud is None or len(self._event_log) < 3:
             return
         recent = self._event_log[-100:]
-        patch = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: self._policy_mgr.request_update(
-                {"events_last_window": len(recent)},
-                {
-                    "emergency": sum(1 for e in recent if e["level"] == 3),
-                    "warning":   sum(1 for e in recent if e["level"] == 2),
-                },
-                {sid: spec["params"] for sid, spec in self._stl._specs.items()},
-            ),
+        self._cloud.evaluate_policy(
+            rho_summary={"events_last_window": len(recent)},
+            event_counts={
+                "emergency": sum(1 for e in recent if e["level"] == 3),
+                "warning":   sum(1 for e in recent if e["level"] == 2),
+            },
+            current_params={sid: spec["params"] for sid, spec in self._stl._specs.items()},
+            context=os.environ.get("OPERATOR_CONTEXT", ""),
+            on_patch=self._stl.apply_cloud_params,
         )
-        if patch:
-            self._stl.apply_cloud_params(patch)
-            logger.info("STL params hot-swapped from Qwen Cloud policy update")
 
     def _shutdown(self, *_) -> None:
         logger.info("Shutdown signal received")
@@ -216,7 +332,22 @@ class SafeEdge:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="SafeEdge car park safety monitor")
-    parser.add_argument("--mock", action="store_true",
-                        help="Synthetic scenario — no camera or homography needed")
+    parser.add_argument(
+        "--source",
+        choices=SOURCE_CHOICES,
+        default="mock",
+        help="Camera source: mock | webcam | realsense | file",
+    )
+    parser.add_argument(
+        "--file-path", dest="file_path", default=None,
+        help="Path to video file (required when --source file)",
+    )
+    parser.add_argument("--mock", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--model", default="yolov8s.pt",
+                        help="YOLO model file (default: yolov8s.pt)")
+    parser.add_argument("--conf", type=float, default=0.25,
+                        help="Detection confidence threshold (default: 0.25)")
     args = parser.parse_args()
-    SafeEdge(mock=args.mock).run()
+    source = "mock" if args.mock else args.source
+    SafeEdge(source=source, file_path=args.file_path,
+             model=args.model, conf=args.conf).run()

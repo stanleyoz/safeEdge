@@ -1,9 +1,13 @@
 cloud:
-  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  # International endpoint (hackathon default). Override via DASHSCOPE_BASE_URL.
+  base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
   # API key loaded from DASHSCOPE_API_KEY env var — never hardcode here
   models:
-    reasoning: "qwen-plus"        # policy decisions, risk forecasting
-    reporting: "qwen-turbo"       # incident reports, summaries (faster/cheaper)
+    # Verified available on intl endpoint 2026-06-30. Override via env:
+    # QWEN_REASONING_MODEL / QWEN_VISION_MODEL / QWEN_TEXT_MODEL
+    reasoning: "qwen-max"         # policy decisions, risk forecasting (flagship)
+    vision:    "qwen-vl-max"      # multimodal incident reports (flagship)
+    reporting: "qwen-turbo"       # text-only incident fallback (fast/cheap)
     max_tokens: 1024
   rate_limit:
     requests_per_minute: 30

@@ -1,0 +1,52 @@
+# Serverless Devs config — SafeEdge backend on Alibaba Cloud Function Compute 3.0
+# Deploy:  s deploy   (after `npm i -g @serverless-devs/s` and `s config add`)
+#
+# Region note: use an INTERNATIONAL region matching your hackathon account,
+# e.g. ap-southeast-1 (Singapore). The ACR image must live in the SAME region.
+
+edition: 3.0.0
+name: safeedge-backend
+access: default
+
+vars:
+  region: ap-southeast-1
+  # Public Docker Hub image (free).
+  image: docker.io/stanleyoz/safeedge-backend:latest
+
+resources:
+  safeedge:
+    component: fc3
+    props:
+      region: ${vars.region}
+      functionName: safeedge-backend
+      description: SafeEdge cloud backend — Qwen skills + dashboard
+      runtime: custom-container
+      customContainerConfig:
+        image: ${vars.image}
+        port: 8080
+      cpu: 0.5
+      memorySize: 1024          # MB — comfortable for opencv + Qwen client
+      diskSize: 512
+      timeout: 60               # s — vision incident reports can take a few s
+      instanceConcurrency: 5
+      internetAccess: true      # required to reach dashscope-intl + Tablestore
+      environmentVariables:
+        DASHSCOPE_API_KEY: ${env(DASHSCOPE_API_KEY)}
+        QWEN_REASONING_MODEL: qwen-max
+        QWEN_VISION_MODEL: qwen-vl-max
+        QWEN_TEXT_MODEL: qwen-turbo
+        LOCATION_LABEL: Car Park
+        FORECAST_INTERVAL_S: "3600"
+        # Tablestore (create instance first — see deploy/README.md):
+        TABLESTORE_ENDPOINT: ${env(TABLESTORE_ENDPOINT)}
+        TABLESTORE_INSTANCE: ${env(TABLESTORE_INSTANCE)}
+        ALIBABA_CLOUD_ACCESS_KEY_ID: ${env(ALIBABA_CLOUD_ACCESS_KEY_ID)}
+        ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${env(ALIBABA_CLOUD_ACCESS_KEY_SECRET)}
+      triggers:
+        - triggerName: http
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods:
+              - GET
+              - POST

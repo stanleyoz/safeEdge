@@ -10,14 +10,17 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import cv2
 import numpy as np
 
 from cloud.qwen_client import QwenCloudClient
-from edge.safety.intervention import InterventionEvent
+
+if TYPE_CHECKING:
+    from edge.safety.intervention import InterventionEvent
 
 logger = logging.getLogger(__name__)
 
@@ -39,17 +42,19 @@ for a building safety log. Use plain English. Be factual about distances and tim
 class IncidentReporter:
     def __init__(
         self,
-        vision_model: str = "qwen-vl-plus",
-        text_model:   str = "qwen-turbo",
+        vision_model: Optional[str] = None,
+        text_model:   Optional[str] = None,
         location:     str = "Car Park",
     ):
+        vision_model = vision_model or os.environ.get("QWEN_VISION_MODEL", "qwen-vl-max")
+        text_model   = text_model   or os.environ.get("QWEN_TEXT_MODEL",   "qwen-turbo")
         self._vision_client = QwenCloudClient(model=vision_model, max_tokens=300)
         self._text_client   = QwenCloudClient(model=text_model,   max_tokens=256)
         self._location = location
 
     def report(
         self,
-        event: InterventionEvent,
+        event: "InterventionEvent",
         frame_bgr: Optional[np.ndarray] = None,
     ) -> Optional[str]:
         ts = datetime.fromtimestamp(event.timestamp).strftime("%Y-%m-%d %H:%M:%S")
