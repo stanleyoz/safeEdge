@@ -45,22 +45,22 @@ Three tiers. The edge is real-time and offline-capable; the Alibaba-hosted backe
 
 ```
 ┌──────────────── EDGE — Jetson Orin NX (30 Hz, offline-capable) ─────────────────┐
-│  D455 (RGB+depth) → YOLOv8s (GPU) → ByteTrack → SignalExtractor (metric d_min,   │
-│  v_veh, d_pred) → STLMonitor (ρ₁–ρ₅, rtamt) → InterventionEngine                 │
-│       │                                                  │                       │
-│       └─► LocalQwen (Ollama, optional)        edge/cloud_client.py (non-blocking) │
-└───────────────────────────────────────────────────────────────│────────────────┘
-                                                                  │ HTTPS
-┌──────────────── ALIBABA CLOUD — Function Compute 3.0 ───────────▼────────────────┐
-│  FastAPI (backend/app.py)                                                        │
-│    POST /api/state · /api/events · /api/policy/evaluate · GET /api/incidents …   │
-│    ├─ Policy Manager   (qwen-max)     → STL param patch ──► back to edge          │
-│    ├─ Incident Reporter(qwen-vl-max)  → NL safety report                         │
-│    ├─ Risk Forecaster  (qwen-max)     → high-risk windows                        │
-│    ├─ Tablestore (events · incidents · ρ-history · forecasts)                    │
-│    └─ Live dashboard (WebSocket)                                                 │
+│  D455 (RGB+depth) → YOLOv8s (GPU) → ByteTrack → SignalExtractor (metric d_min,  │
+│  v_veh, d_pred) → STLMonitor (ρ₁–ρ₅, rtamt) → InterventionEngine                │
+│       │                                                  │                      │
+│       └─► LocalQwen (Ollama, optional)      edge/cloud_client.py (non-blocking) │
+└───────────────────────────────────────────────────────────────│─────────────────┘
+                                                                │ HTTPS
+┌──────────────── ALIBABA CLOUD — Function Compute 3.0 ─────────▼─────────────────┐
+│  FastAPI (backend/app.py)                                                       │
+│    POST /api/state · /api/events · /api/policy/evaluate · GET /api/incidents …  │
+│    ├─ Policy Manager   (qwen-max)     → STL param patch ──► back to edge        │
+│    ├─ Incident Reporter(qwen-vl-max)  → NL safety report                        │
+│    ├─ Risk Forecaster  (qwen-max)     → high-risk windows                       │
+│    ├─ Tablestore (events · incidents · ρ-history · forecasts)                   │
+│    └─ Live dashboard (WebSocket)                                                │
 └──────────────────────────────────────────│──────────────────────────────────────┘
-                                            ▼  cloud/qwen_client.py (DashScope intl)
+                                           ▼  cloud/qwen_client.py (DashScope intl)
                               Qwen Cloud: qwen-max · qwen-vl-max · qwen-turbo
 ```
 
