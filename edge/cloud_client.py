@@ -44,12 +44,20 @@ class CloudClient:
 
     # ── public, non-blocking ──────────────────────────────────────────────────
 
-    def push_state(self, state, frame_bgr: Optional[np.ndarray] = None) -> None:
-        """Throttled live-state push for the dashboard. Drops frames if too soon."""
+    def push_state(self, state, frame_bgr: Optional[np.ndarray] = None,
+                   detections=None, aoi_poly=None) -> None:
+        """Throttled live-state push for the dashboard. Drops frames if too soon.
+
+        If `detections`/`aoi_poly` are supplied, thin yellow boxes and the AOI
+        outline are drawn on the posted frame (only on frames that actually
+        post — negligible cost) so the dashboard visibly signals live detection.
+        """
         now = time.monotonic()
         if now - self._last_state_push < self._state_min_interval:
             return
         self._last_state_push = now
+        if frame_bgr is not None and (detections or aoi_poly is not None):
+            frame_bgr = _draw_boxes(frame_bgr, detections or [], aoi_poly)
         payload = _state_payload(state, frame_bgr)
         self._submit("/api/state", payload)
 
@@ -116,6 +124,30 @@ class CloudClient:
 
 
 # ── payload builders (match backend/models.py) ────────────────────────────────
+
+def _draw_boxes(frame_bgr: np.ndarray, detections, aoi_poly=None) -> np.ndarray:
+    """Thin yellow boxes + track labels + AOI outline — a lightweight 'live' cue."""
+    img = frame_bgr.copy()
+    YELLOW = (0, 255, 255)
+    if aoi_poly is not None:
+        try:
+            cv2.polylines(img, [aoi_poly.astype(np.int32)], True, (0, 200, 200), 1, cv2.LINE_AA)
+        except Exception:  # noqa: BLE001
+            pass
+    for d in detections:
+        try:
+            x1, y1, x2, y2 = (int(v) for v in d.bbox_xyxy)
+        except Exception:  # noqa: BLE001
+            continue
+        cv2.rectangle(img, (x1, y1), (x2, y2), YELLOW, 1)
+        label = getattr(d, "label", "")
+        tid = getattr(d, "track_id", "")
+        txt = f"{label}" + (f"#{tid}" if tid != "" else "")
+        if txt:
+            cv2.putText(img, txt, (x1, max(y1 - 3, 10)),
+                        cv2.FONT_HERSHEY_PLAIN, 0.8, YELLOW, 1, cv2.LINE_AA)
+    return img
+
 
 def _encode_frame(frame_bgr: Optional[np.ndarray], max_dim: int = 640,
                   quality: int = 70) -> Optional[str]:

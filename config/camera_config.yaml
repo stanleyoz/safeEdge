@@ -15,3 +15,22 @@ homography_file: "config/homography.npy"
 # ── Mock mode ────────────────────────────────────────────────────────────────
 mock:
   enabled: false     # override with --mock flag or set true here for dev
+
+# ── Area of Interest (AOI) ───────────────────────────────────────────────────
+# Restrict detection + safety logic to a zone (e.g. the walkway + the middle two
+# rows of cars). Improves small-object recall (crop_zoom) AND sharpens the STL
+# signal by dropping irrelevant person↔vehicle pairs. Geometry-safe: detections
+# are remapped to full-frame coords, so depth/intrinsics are untouched.
+#
+# polygon: normalised [x, y] points in 0..1 (image top-left origin). The outline
+# is drawn on the dashboard/preview so you can eyeball and tune it to your view.
+# The default is a centred trapezoid — ADJUST to your camera's walkway/rows.
+aoi:
+  enabled: true
+  crop_zoom: true    # B: detect on the AOI crop (better small-pedestrian recall)
+  pad: 0.08          # padding around the polygon's bounding box for the crop
+  polygon:
+    - [0.15, 0.45]
+    - [0.85, 0.45]
+    - [0.98, 0.95]
+    - [0.02, 0.95]
