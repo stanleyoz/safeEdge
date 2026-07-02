@@ -40,6 +40,7 @@ class CloudClient:
         self._last_state_push = 0.0
         self._pool = ThreadPoolExecutor(max_workers=max_workers,
                                         thread_name_prefix="cloud")
+        self._state_future = None   # in-flight state push (coalesce to latest)
         logger.info("CloudClient → %s", self._base)
 
     # ── public, non-blocking ──────────────────────────────────────────────────
@@ -55,11 +56,17 @@ class CloudClient:
         now = time.monotonic()
         if now - self._last_state_push < self._state_min_interval:
             return
+        # Coalesce to latest: if the previous state push is still in flight
+        # (e.g. a cold-started backend), skip this one instead of queueing —
+        # we only care about the newest frame. Prevents an unbounded backlog
+        # that would make the dashboard freeze then lag by minutes.
+        if self._state_future is not None and not self._state_future.done():
+            return
         self._last_state_push = now
         if frame_bgr is not None and (detections or aoi_poly is not None):
             frame_bgr = _draw_boxes(frame_bgr, detections or [], aoi_poly)
         payload = _state_payload(state, frame_bgr)
-        self._submit("/api/state", payload)
+        self._state_future = self._pool.submit(self._post, "/api/state", payload)
 
     def push_event(self, event, frame_bgr: Optional[np.ndarray] = None) -> None:
         """Intervention event → cloud (triggers Qwen incident report if level≥2)."""

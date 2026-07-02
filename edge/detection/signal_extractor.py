@@ -82,15 +82,13 @@ class SignalExtractor:
         use_depth = depth_m is not None and self._fx is not None
         dbg: list[str] = []
 
-        # Occupant rejection: a "person" whose box is largely inside a vehicle
-        # box is a driver/passenger, not a pedestrian at risk. Skip them so a
-        # driver walking to and then driving their car is never an incident.
-        veh_boxes = [d.bbox_xyxy for d in detections if d.label in VEHICLE_LABELS]
+        # NOTE: no occupant/driver filtering. At operational (car-park) resolution
+        # a driver behind glass is not reliably detected, so every `person` is a
+        # real pedestrian. The motion gate (parked vs moving vehicle) is the true
+        # discriminator; an occupant filter only risks suppressing a genuine
+        # pedestrian at the closest-approach danger moment.
 
         for det in detections:
-            if det.label in PERSON_LABELS and _person_in_vehicle(det.bbox_xyxy, veh_boxes):
-                dbg.append(f"person#{det.track_id} OCCUPANT-skip")
-                continue
             z_dbg = None
             if use_depth:
                 ground_xz, z_dbg = self._foot_to_ground_depth(det.bbox_xyxy, depth_m)
@@ -172,21 +170,6 @@ class SignalExtractor:
 
         x = (foot_u - self._cx) * z / self._fx
         return np.array([x, z], dtype=np.float32), z
-
-
-def _person_in_vehicle(person_bbox: np.ndarray, vehicle_bboxes: list,
-                       thresh: float = 0.6) -> bool:
-    """True if ≥thresh of the person's box area lies inside any vehicle box
-    (i.e. the person is an occupant, not a pedestrian)."""
-    px1, py1, px2, py2 = person_bbox
-    p_area = max(1.0, float((px2 - px1) * (py2 - py1)))
-    for vb in vehicle_bboxes:
-        vx1, vy1, vx2, vy2 = vb
-        iw = max(0.0, float(min(px2, vx2) - max(px1, vx1)))
-        ih = max(0.0, float(min(py2, vy2) - max(py1, vy1)))
-        if (iw * ih) / p_area >= thresh:
-            return True
-    return False
 
 
 def _min_ped_veh_distance(

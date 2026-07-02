@@ -30,8 +30,10 @@ aoi:
   crop_zoom: false   # filter-only: thin lane band would clip tall cars if cropped;
                      # detect on full frame, then keep objects with feet in the zone
   pad: 0.08
-  polygon:           # active lane zone (webcam FOV) — pedestrians + moving cars
-    - [0.347, 0.696]
-    - [0.762, 0.696]
-    - [0.601, 0.586]
-    - [0.503, 0.591]
+  polygon:           # wide zone: middle road + parked-car entry/exit (catch pull-outs)
+    - [0.212, 0.685]
+    - [0.994, 0.699]
+    - [0.997, 0.580]
+    - [0.706, 0.558]
+    - [0.416, 0.555]
+    - [0.218, 0.577]
