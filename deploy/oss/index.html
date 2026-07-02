@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeEdge — Car Park Safety Monitor</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background:#0d1117; color:#e6edf3; font-family:'Segoe UI',system-ui,sans-serif; height:100vh; display:grid; grid-template-rows:56px 1fr; }
+  header { background:#161b22; border-bottom:1px solid #30363d; display:flex; align-items:center; padding:0 24px; gap:14px; }
+  header h1 { font-size:1rem; font-weight:600; letter-spacing:.05em; color:#58a6ff; }
+  #level-badge { padding:4px 12px; border-radius:12px; font-size:.75rem; font-weight:700; letter-spacing:.08em; background:#00c853; color:#000; transition:background .3s; }
+  #platform-badge { font-size:.68rem; color:#8b949e; border:1px solid #30363d; border-radius:10px; padding:3px 9px; }
+  #platform-badge b { color:#ff9800; }
+  #poll-dot { width:8px; height:8px; border-radius:50%; background:#3d4148; margin-left:auto; }
+  #poll-dot.live { background:#00c853; }
+
+  main { display:grid; grid-template-columns:1fr 340px; grid-template-rows:1fr 230px; gap:1px; background:#30363d; overflow:hidden; }
+  section { background:#0d1117; padding:16px; overflow:hidden; }
+  h2 { font-size:.7rem; text-transform:uppercase; letter-spacing:.1em; color:#8b949e; margin-bottom:8px; }
+
+  #feed-panel { position:relative; }
+  #feed { width:100%; height:100%; object-fit:contain; background:#000; border-radius:4px; }
+  #feed-empty { position:absolute; inset:16px; display:flex; align-items:center; justify-content:center; color:#3d4148; font-size:.8rem; }
+
+  #rho-panel { display:flex; flex-direction:column; gap:12px; }
+  .rho-row { display:flex; flex-direction:column; gap:4px; }
+  .rho-label { font-size:.72rem; color:#8b949e; display:flex; justify-content:space-between; }
+  .rho-label span { font-weight:600; }
+  .rho-bar-bg { background:#21262d; border-radius:3px; height:8px; overflow:hidden; }
+  .rho-bar { height:100%; border-radius:3px; transition:width .2s,background .3s; min-width:2px; }
+
+  /* bottom: incidents (Qwen) + events */
+  #incidents-panel { grid-column:1/2; border-top:1px solid #30363d; overflow-y:auto; }
+  #events-panel { grid-column:2/3; border-top:1px solid #30363d; border-left:1px solid #30363d; overflow-y:auto; }
+  .incident { font-size:.76rem; padding:8px 10px; border-radius:4px; border-left:3px solid #30363d; background:#161b22; margin-bottom:6px; }
+  .incident.level-2 { border-color:#ff6d00; }
+  .incident.level-3 { border-color:#d50000; background:#1f1013; }
+  .incident .meta { color:#8b949e; font-size:.68rem; margin-bottom:3px; display:flex; gap:10px; }
+  .incident .report { color:#e6edf3; line-height:1.4; }
+  .ev { font-size:.7rem; padding:4px 8px; border-radius:3px; border-left:3px solid #30363d; background:#161b22; margin-bottom:4px; display:flex; gap:10px; }
+  .ev.level-1 { border-color:#ffd600; } .ev.level-2 { border-color:#ff6d00; } .ev.level-3 { border-color:#d50000; }
+  .ev .t { color:#8b949e; flex-shrink:0; }
+  #forecast { font-size:.7rem; color:#8b949e; margin-top:8px; border-top:1px solid #30363d; padding-top:8px; }
+  #forecast .win { color:#ffd600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SafeEdge ◆ Car Park Safety Monitor</h1>
+  <div id="level-badge">LOADING…</div>
+  <div id="platform-badge">—</div>
+  <div id="poll-dot"></div>
+</header>
+<main>
+  <section id="feed-panel">
+    <img id="feed" alt="Latest camera frame" style="display:none">
+    <div id="feed-empty">Awaiting edge stream… (live preview also on the Jetson)</div>
+  </section>
+
+  <section id="rho-panel">
+    <h2>STL Robustness (ρ)</h2>
+    <div class="rho-row"><div class="rho-label">φ1 Minimum Separation <span id="val-rho1">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho1"></div></div></div>
+    <div class="rho-row"><div class="rho-label">φ2 Speed-Proximity <span id="val-rho2">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho2"></div></div></div>
+    <div class="rho-row"><div class="rho-label">φ3 Predictive Near-Miss <span id="val-rho3">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho3"></div></div></div>
+    <div class="rho-row"><div class="rho-label">φ4 Emergency Stop <span id="val-rho4">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho4"></div></div></div>
+    <div class="rho-row"><div class="rho-label">φ5 Post-Alert Clearance <span id="val-rho5">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho5"></div></div></div>
+    <div style="margin-top:12px; border-top:1px solid #30363d; padding-top:12px;">
+      <h2>Live Signals</h2>
+      <div style="font-size:.78rem; display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px;">
+        <div style="color:#8b949e">d_min <span id="sig-dmin" style="color:#e6edf3">—</span> m</div>
+        <div style="color:#8b949e">v_veh <span id="sig-vveh" style="color:#e6edf3">—</span> m/s</div>
+        <div style="color:#8b949e">d_pred <span id="sig-dpred" style="color:#e6edf3">—</span> m</div>
+        <div style="color:#8b949e">scale <span id="sig-scale" style="color:#e6edf3">—</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="incidents-panel">
+    <h2>Incident Reports — Qwen-VL</h2>
+    <div id="incidents"></div>
+  </section>
+
+  <section id="events-panel">
+    <h2>Event Log</h2>
+    <div id="events"></div>
+    <div id="forecast"></div>
+  </section>
+</main>
+
+<script>window.SAFEEDGE_API="https://safeedg-backend-nkmqevdhff.ap-southeast-1.fcapp.run";</script>
+<script>
+const LEVEL_COLOURS = {0:"#00c853",1:"#ffd600",2:"#ff6d00",3:"#d50000"};
+const LEVEL_LABELS  = {0:"SAFE",1:"AWARENESS",2:"WARNING",3:"EMERGENCY"};
+const RHO_MAX = 8.0;
+const POLL_MS = 1500;
+
+const rhoColour = v => v===null ? "#3d4148" : v<0 ? "#d50000" : v<1 ? "#ff6d00" : v<3 ? "#ffd600" : "#00c853";
+const rhoWidth  = v => v===null ? "0%" : Math.min(100, Math.max(2, (v/RHO_MAX)*100)) + "%";
+function updateRho(id, v){ const val=document.getElementById("val-"+id), bar=document.getElementById("bar-"+id);
+  val.textContent = (v===null||v===undefined) ? "n/a" : v.toFixed(3);
+  bar.style.width = rhoWidth(v ?? null); bar.style.background = rhoColour(v ?? null); }
+const fmt = t => new Date((t||Date.now()/1000)*1000).toLocaleTimeString();
+
+// API base: ?api=<url> query param, or window.SAFEEDGE_API, else same-origin.
+// Lets the dashboard be hosted anywhere (laptop/OSS/Pages) and hit the FC API.
+const API = (new URLSearchParams(location.search).get("api")
+            || window.SAFEEDGE_API || "").replace(/\/$/, "");
+async function get(path){ const r = await fetch(API + path,{cache:"no-store"}); if(!r.ok) throw new Error(path); return r.json(); }
+
+function renderState(s){
+  if(!s || s.level===undefined) return;
+  const badge=document.getElementById("level-badge");
+  badge.textContent = s.level_label || LEVEL_LABELS[s.level] || "—";
+  badge.style.background = LEVEL_COLOURS[s.level] || "#3d4148";
+  badge.style.color = s.level<=1 ? "#000" : "#fff";
+  const frame = s.frame_jpeg_b64 || s.frame;
+  if(frame){ const img=document.getElementById("feed"); img.src="data:image/jpeg;base64,"+frame; img.style.display="block"; document.getElementById("feed-empty").style.display="none"; }
+  const r=s.rho||{}; ["rho1","rho2","rho3","rho4","rho5"].forEach(k=>updateRho(k, r[k]));
+  const sg=s.signals||{};
+  document.getElementById("sig-dmin").textContent  = sg.d_min!=null?sg.d_min.toFixed(2):"—";
+  document.getElementById("sig-vveh").textContent  = sg.v_veh_max!=null?sg.v_veh_max.toFixed(2):"—";
+  document.getElementById("sig-dpred").textContent = sg.d_pred!=null?sg.d_pred.toFixed(2):"—";
+  document.getElementById("sig-scale").textContent = s.scale_factor!=null?s.scale_factor.toFixed(2):"—";
+}
+
+function renderIncidents(list){
+  const el=document.getElementById("incidents");
+  if(!list||!list.length){ el.innerHTML='<div style="color:#3d4148;font-size:.76rem">No incidents yet.</div>'; return; }
+  el.innerHTML = list.map(i=>`<div class="incident level-${i.level}">
+    <div class="meta"><span>${fmt(i.timestamp)}</span><span>${LEVEL_LABELS[i.level]||""}</span><span>d_min ${(+i.d_min).toFixed(2)}m · v ${(+i.v_veh_max).toFixed(1)}m/s</span></div>
+    <div class="report">${(i.report||"").replace(/</g,"&lt;")}</div></div>`).join("");
+}
+
+function renderEvents(list){
+  const el=document.getElementById("events");
+  if(!list||!list.length){ el.innerHTML='<div style="color:#3d4148;font-size:.7rem">No events yet.</div>'; return; }
+  el.innerHTML = list.slice().reverse().slice(0,40).map(e=>`<div class="ev level-${e.level}">
+    <span class="t">${fmt(e.timestamp)}</span><span>${(e.message||"").replace(/</g,"&lt;")}</span></div>`).join("");
+}
+
+function renderForecast(f){
+  const el=document.getElementById("forecast");
+  if(!f || !(f.high_risk_windows||[]).length){ el.innerHTML=""; return; }
+  el.innerHTML = "<b>Risk forecast:</b> " + f.high_risk_windows
+    .map(w=>`<span class="win">${w.start}–${w.end}</span> (${Math.round((w.confidence||0)*100)}%)`).join(" · ");
+}
+
+async function platform(){
+  try{ const h=await get("/healthz");
+    const fc=h.fc||{}; const p=document.getElementById("platform-badge");
+    p.innerHTML = h.platform==="alibaba-function-compute"
+      ? `<b>Alibaba FC</b> · ${fc.region||""} · ${h.store}` : `${h.platform} · ${h.store}`;
+  }catch(e){}
+}
+
+async function poll(){
+  const dot=document.getElementById("poll-dot");
+  try{
+    const [s,inc,ev,fc] = await Promise.all([
+      get("/api/state/latest").catch(()=>null),
+      get("/api/incidents?limit=20").catch(()=>[]),
+      get("/api/events?limit=60").catch(()=>[]),
+      get("/api/forecast").catch(()=>null),
+    ]);
+    renderState(s); renderIncidents(inc); renderEvents(ev); renderForecast(fc);
+    dot.classList.add("live");
+  }catch(e){ dot.classList.remove("live"); }
+  setTimeout(poll, POLL_MS);
+}
+
+platform(); poll();
+</script>
+</body>
+</html>

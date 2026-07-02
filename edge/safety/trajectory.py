@@ -82,25 +82,41 @@ class VelocityEstimator:
     velocity estimate.  Call update() each frame, get_velocity() any time.
     """
 
-    def __init__(self, history_frames: int = 6, fps: float = 30.0):
+    def __init__(self, history_frames: int = 10, fps: float = 30.0,
+                 max_speed: float = 5.0):
         self._history: dict[int, list[np.ndarray]] = {}
         self._n = history_frames
         self._dt = 1.0 / fps
+        self._max_speed = max_speed                 # physical cap (m/s)
+        self._max_jump = max_speed * self._dt       # max plausible move / frame
 
     def update(self, track_id: int, xyz: np.ndarray) -> None:
         buf = self._history.setdefault(track_id, [])
+        # Outlier rejection: ignore a sample implying an impossible jump — this
+        # is usually bbox/homography pixel-jitter (huge at long range), not real
+        # motion. Holding the previous position avoids phantom velocity spikes.
+        if buf:
+            jump = float(np.linalg.norm((xyz - buf[-1])[[0, 2]]))
+            if jump > self._max_jump:
+                return
         buf.append(xyz.copy())
         if len(buf) > self._n:
             buf.pop(0)
 
     def get_velocity(self, track_id: int) -> np.ndarray:
         buf = self._history.get(track_id, [])
-        if len(buf) < 2:
+        if len(buf) < 3:
             return np.zeros(3)
-        # Central difference over available window for smoothing
-        delta = buf[-1] - buf[0]
-        elapsed = (len(buf) - 1) * self._dt
-        return delta / elapsed if elapsed > 0 else np.zeros(3)
+        # Component-wise MEDIAN of per-step velocities — robust to single-frame
+        # jitter (vs endpoint difference which a single outlier corrupts).
+        steps = np.array([(buf[i] - buf[i - 1]) / self._dt
+                          for i in range(1, len(buf))])
+        vel = np.median(steps, axis=0)
+        # Final safety clamp to the physical cap
+        speed = float(np.linalg.norm(vel))
+        if speed > self._max_speed:
+            vel = vel * (self._max_speed / speed)
+        return vel
 
     def prune(self, active_ids: set[int]) -> None:
         stale = [k for k in self._history if k not in active_ids]

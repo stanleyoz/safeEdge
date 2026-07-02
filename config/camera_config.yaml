@@ -27,10 +27,11 @@ mock:
 # The default is a centred trapezoid — ADJUST to your camera's walkway/rows.
 aoi:
   enabled: true
-  crop_zoom: true    # B: detect on the AOI crop (better small-pedestrian recall)
-  pad: 0.08          # padding around the polygon's bounding box for the crop
-  polygon:
-    - [0.15, 0.45]
-    - [0.85, 0.45]
-    - [0.98, 0.95]
-    - [0.02, 0.95]
+  crop_zoom: false   # filter-only: thin lane band would clip tall cars if cropped;
+                     # detect on full frame, then keep objects with feet in the zone
+  pad: 0.08
+  polygon:           # active lane zone (webcam FOV) — pedestrians + moving cars
+    - [0.347, 0.696]
+    - [0.762, 0.696]
+    - [0.601, 0.586]
+    - [0.503, 0.591]

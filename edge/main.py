@@ -98,10 +98,13 @@ class SafeEdge:
                 homography = np.load(hfile)
                 logger.info("Camera: webcam %s | homography loaded from %s", cv_source, hfile)
             else:
-                raise RuntimeError(
-                    f"Homography file not found: {hfile}\n"
-                    "Run tools/calibrate_homography.py first."
-                )
+                # Uncalibrated: run with a mock homography so frames still stream
+                # (metric positions are meaningless until calibrated). This lets
+                # the browser calibrator pull a live frame to define the real one.
+                homography = mock_homography()
+                logger.warning("Camera: webcam %s | NO homography (%s) — running "
+                               "UNCALIBRATED with mock projection; distances not metric",
+                               cv_source, hfile)
 
         self._fps       = fps
         self._detector  = ObjectDetector(model_path=model, confidence=conf, device="auto")

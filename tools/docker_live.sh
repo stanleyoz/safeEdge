@@ -32,6 +32,7 @@ docker run --rm --runtime nvidia \
   -v /home/icp/.Xauthority:/tmp/.Xauthority:ro \
   -v "${PROJECT}:/safeedge" \
   -v /dev/bus/usb:/dev/bus/usb \
+  --device /dev/video0 --device /dev/video1 \
   -v /usr/lib/aarch64-linux-gnu/libusb-1.0.so.0:/usr/lib/aarch64-linux-gnu/libusb-1.0.so.0:ro \
   -v /usr/lib/aarch64-linux-gnu/libusb-1.0.so.0.3.0:/usr/lib/aarch64-linux-gnu/libusb-1.0.so.0.3.0:ro \
   "${IMAGE}" \

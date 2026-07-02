@@ -30,12 +30,20 @@ class VideoSource:
     """
 
     def __init__(self, source: int | str, target_fps: float = 15.0):
-        self._cap = cv2.VideoCapture(source)
+        # For USB webcams (int index) force the V4L2 backend + MJPG. On Jetson
+        # the default backend is GStreamer, which stalls badly on USB cams;
+        # V4L2 + MJPG streams cleanly at ~30 fps.
+        if isinstance(source, int):
+            self._cap = cv2.VideoCapture(source, cv2.CAP_V4L2)
+            self._cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        else:
+            self._cap = cv2.VideoCapture(source)   # RTSP / file → default backend
         if not self._cap.isOpened():
             raise RuntimeError(f"Cannot open video source: {source!r}")
         self._target_fps = target_fps
-        # request resolution from camera if supported (ignored by files)
-        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)   # minimise latency
 
     def read(self) -> CameraFrame | None:
         ok, frame = self._cap.read()
