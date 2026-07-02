@@ -40,18 +40,33 @@ class CloudClient:
         self._last_state_push = 0.0
         self._pool = ThreadPoolExecutor(max_workers=max_workers,
                                         thread_name_prefix="cloud")
+        self._state_future = None   # in-flight state push (coalesce to latest)
         logger.info("CloudClient → %s", self._base)
 
     # ── public, non-blocking ──────────────────────────────────────────────────
 
-    def push_state(self, state, frame_bgr: Optional[np.ndarray] = None) -> None:
-        """Throttled live-state push for the dashboard. Drops frames if too soon."""
+    def push_state(self, state, frame_bgr: Optional[np.ndarray] = None,
+                   detections=None, aoi_poly=None) -> None:
+        """Throttled live-state push for the dashboard. Drops frames if too soon.
+
+        If `detections`/`aoi_poly` are supplied, thin yellow boxes and the AOI
+        outline are drawn on the posted frame (only on frames that actually
+        post — negligible cost) so the dashboard visibly signals live detection.
+        """
         now = time.monotonic()
         if now - self._last_state_push < self._state_min_interval:
             return
+        # Coalesce to latest: if the previous state push is still in flight
+        # (e.g. a cold-started backend), skip this one instead of queueing —
+        # we only care about the newest frame. Prevents an unbounded backlog
+        # that would make the dashboard freeze then lag by minutes.
+        if self._state_future is not None and not self._state_future.done():
+            return
         self._last_state_push = now
+        if frame_bgr is not None and (detections or aoi_poly is not None):
+            frame_bgr = _draw_boxes(frame_bgr, detections or [], aoi_poly)
         payload = _state_payload(state, frame_bgr)
-        self._submit("/api/state", payload)
+        self._state_future = self._pool.submit(self._post, "/api/state", payload)
 
     def push_event(self, event, frame_bgr: Optional[np.ndarray] = None) -> None:
         """Intervention event → cloud (triggers Qwen incident report if level≥2)."""
@@ -116,6 +131,30 @@ class CloudClient:
 
 
 # ── payload builders (match backend/models.py) ────────────────────────────────
+
+def _draw_boxes(frame_bgr: np.ndarray, detections, aoi_poly=None) -> np.ndarray:
+    """Thin yellow boxes + track labels + AOI outline — a lightweight 'live' cue."""
+    img = frame_bgr.copy()
+    YELLOW = (0, 255, 255)
+    if aoi_poly is not None:
+        try:
+            cv2.polylines(img, [aoi_poly.astype(np.int32)], True, (0, 200, 200), 1, cv2.LINE_AA)
+        except Exception:  # noqa: BLE001
+            pass
+    for d in detections:
+        try:
+            x1, y1, x2, y2 = (int(v) for v in d.bbox_xyxy)
+        except Exception:  # noqa: BLE001
+            continue
+        cv2.rectangle(img, (x1, y1), (x2, y2), YELLOW, 1)
+        label = getattr(d, "label", "")
+        tid = getattr(d, "track_id", "")
+        txt = f"{label}" + (f"#{tid}" if tid != "" else "")
+        if txt:
+            cv2.putText(img, txt, (x1, max(y1 - 3, 10)),
+                        cv2.FONT_HERSHEY_PLAIN, 0.8, YELLOW, 1, cv2.LINE_AA)
+    return img
+
 
 def _encode_frame(frame_bgr: Optional[np.ndarray], max_dim: int = 640,
                   quality: int = 70) -> Optional[str]:

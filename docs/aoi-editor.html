@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeEdge — AOI Polygon Editor</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0d1117; color:#e6edf3; font-family:'Segoe UI',system-ui,sans-serif; padding:18px; }
+  h1 { font-size:1.1rem; color:#58a6ff; margin-bottom:4px; }
+  p.hint { color:#8b949e; font-size:.82rem; margin-bottom:12px; max-width:70ch; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
+  button { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px;
+           padding:6px 12px; font-size:.82rem; cursor:pointer; }
+  button:hover { background:#30363d; }
+  button.primary { background:#1f6feb; border-color:#1f6feb; }
+  #wrap { display:grid; grid-template-columns:1fr 320px; gap:16px; align-items:start; }
+  @media (max-width:900px){ #wrap { grid-template-columns:1fr; } }
+  canvas { border:1px solid #30363d; border-radius:6px; background:#000; cursor:crosshair; max-width:100%; }
+  #out { background:#161b22; border:1px solid #30363d; border-radius:6px; padding:12px; }
+  #out h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:#8b949e; margin-bottom:8px; }
+  pre { background:#0d1117; border:1px solid #30363d; border-radius:5px; padding:10px;
+        font-size:.76rem; white-space:pre-wrap; word-break:break-all; color:#7ee787; }
+  .status { font-size:.78rem; color:#8b949e; margin-top:8px; }
+</style>
+</head>
+<body>
+<h1>SafeEdge ◆ AOI Polygon Editor</h1>
+<p class="hint">Click the corners of your Area of Interest (the walkway + the middle two rows), in order,
+   on the live camera frame. Add as many points as you like. The tool outputs normalised
+   coordinates to drop into <code>config/camera_config.yaml</code> — or paste them back to me.</p>
+
+<div class="bar">
+  <button class="primary" onclick="loadFrame()">↻ Load / refresh live frame</button>
+  <button onclick="undo()">⤺ Undo point</button>
+  <button onclick="clearPts()">✕ Clear</button>
+  <button onclick="copyOut()">⧉ Copy YAML</button>
+  <span class="status" id="status">—</span>
+</div>
+
+<div id="wrap">
+  <canvas id="cv" width="848" height="480"></canvas>
+  <div id="out">
+    <h2>Polygon (normalised)</h2>
+    <pre id="yaml">click points to begin…</pre>
+    <h2 style="margin-top:12px">Raw points</h2>
+    <pre id="json">[]</pre>
+  </div>
+</div>
+
+<script>
+const API = (new URLSearchParams(location.search).get("api")
+            || window.SAFEEDGE_API
+            || "https://safeedg-backend-nkmqevdhff.ap-southeast-1.fcapp.run").replace(/\/$/, "");
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+let img = new Image();
+let pts = [];              // normalised [x,y] in 0..1
+
+function setStatus(s){ document.getElementById("status").textContent = s; }
+
+async function loadFrame(){
+  setStatus("loading frame…");
+  try{
+    const r = await fetch(API + "/api/state/latest", {cache:"no-store"});
+    const d = await r.json();
+    const b64 = d.frame_jpeg_b64 || d.frame;
+    if(!b64){ setStatus("no live frame yet — is the pipeline running?"); return; }
+    img = new Image();
+    img.onload = () => { cv.width = img.width; cv.height = img.height; redraw(); setStatus(`frame ${img.width}×${img.height} — click your AOI corners`); };
+    img.src = "data:image/jpeg;base64," + b64;
+  }catch(e){ setStatus("fetch failed: " + e); }
+}
+
+function redraw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if(img.width) ctx.drawImage(img,0,0,cv.width,cv.height);
+  if(pts.length){
+    ctx.beginPath();
+    pts.forEach((p,i)=>{ const x=p[0]*cv.width, y=p[1]*cv.height; i?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    if(pts.length>2) ctx.closePath();
+    ctx.fillStyle="rgba(0,220,220,0.15)"; ctx.fill();
+    ctx.strokeStyle="#00dcdc"; ctx.lineWidth=2; ctx.stroke();
+    pts.forEach((p,i)=>{ const x=p[0]*cv.width, y=p[1]*cv.height;
+      ctx.fillStyle="#ffd600"; ctx.beginPath(); ctx.arc(x,y,4,0,7); ctx.fill();
+      ctx.fillStyle="#fff"; ctx.font="11px sans-serif"; ctx.fillText(i+1, x+6, y-6); });
+  }
+  updateOut();
+}
+
+cv.addEventListener("click", (e)=>{
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX-rect.left)/rect.width;   // normalise against displayed size
+  const y = (e.clientY-rect.top)/rect.height;
+  pts.push([+x.toFixed(3), +y.toFixed(3)]);
+  redraw();
+});
+
+function undo(){ pts.pop(); redraw(); }
+function clearPts(){ pts=[]; redraw(); }
+
+function updateOut(){
+  const yaml = "aoi:\n  enabled: true\n  crop_zoom: true\n  pad: 0.08\n  polygon:\n" +
+    pts.map(p=>`    - [${p[0]}, ${p[1]}]`).join("\n");
+  document.getElementById("yaml").textContent = pts.length ? yaml : "click points to begin…";
+  document.getElementById("json").textContent = JSON.stringify(pts);
+}
+
+function copyOut(){ navigator.clipboard.writeText(document.getElementById("yaml").textContent)
+  .then(()=>setStatus("YAML copied to clipboard")); }
+
+loadFrame();
+</script>
+</body>
+</html>

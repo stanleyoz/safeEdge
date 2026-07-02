@@ -11,10 +11,13 @@ Output each frame:
 """
 from __future__ import annotations
 
+import logging
 import numpy as np
 from dataclasses import dataclass
 
 from edge.safety.trajectory import TrackedObject, VelocityEstimator
+
+logger = logging.getLogger(__name__)
 
 
 VEHICLE_LABELS = {"car", "truck", "bus", "motorcycle"}
@@ -60,6 +63,7 @@ class SignalExtractor:
     ):
         self._H = homography
         self._vel_est = VelocityEstimator(history_frames, fps)
+        self._dbg_n = 0
         # Unpack (fx, fy, cx, cy) for depth back-projection
         if intrinsics is not None:
             self._fx, self._fy, self._cx, self._cy = intrinsics
@@ -76,12 +80,23 @@ class SignalExtractor:
         active_ids: set[int] = set()
 
         use_depth = depth_m is not None and self._fx is not None
+        dbg: list[str] = []
+
+        # NOTE: no occupant/driver filtering. At operational (car-park) resolution
+        # a driver behind glass is not reliably detected, so every `person` is a
+        # real pedestrian. The motion gate (parked vs moving vehicle) is the true
+        # discriminator; an occupant filter only risks suppressing a genuine
+        # pedestrian at the closest-approach danger moment.
 
         for det in detections:
+            z_dbg = None
             if use_depth:
-                ground_xz = self._foot_to_ground_depth(det.bbox_xyxy, depth_m)
+                ground_xz, z_dbg = self._foot_to_ground_depth(det.bbox_xyxy, depth_m)
             else:
                 ground_xz = self._foot_to_ground_homography(det.bbox_xyxy)
+            # diagnostic: record every detection's resolved depth + kept/dropped
+            zt = "None" if z_dbg is None else f"{z_dbg:.1f}m"
+            dbg.append(f"{det.label}#{det.track_id} z={zt} {'OK' if ground_xz is not None else 'DROP'}")
             if ground_xz is None:
                 continue
 
@@ -101,6 +116,13 @@ class SignalExtractor:
 
         d_min     = _min_ped_veh_distance(pedestrians, vehicles)
         v_veh_max = max((float(np.linalg.norm(v.vel)) for v in vehicles), default=0.0)
+
+        # Throttled depth-probe diagnostic (~1/s at 15fps) — shows which objects
+        # get a valid metric position vs are dropped (e.g. beyond D455 range).
+        self._dbg_n += 1
+        if dbg and self._dbg_n % 15 == 0:
+            logger.info("depth-probe [%s]: %s  →  d_min=%.1f v_veh_max=%.2f",
+                        "depth" if use_depth else "homog", " | ".join(dbg), d_min, v_veh_max)
 
         return SignalBundle(
             d_min=d_min,
@@ -124,8 +146,12 @@ class SignalExtractor:
 
     def _foot_to_ground_depth(
         self, bbox: np.ndarray, depth_m: np.ndarray
-    ) -> np.ndarray | None:
-        """Back-project foot point using metric depth + camera intrinsics → [X, Z] metres."""
+    ) -> tuple[np.ndarray | None, float | None]:
+        """Back-project foot point using metric depth + intrinsics → ([X, Z], z_raw).
+
+        Returns (None, z) when z is out of the reliable range (z still returned
+        for diagnostics), or (None, None) when no valid depth pixels are found.
+        """
         x1, y1, x2, y2 = bbox.astype(int)
         foot_u = int((x1 + x2) / 2)
         foot_v = min(int(y2), depth_m.shape[0] - 1)
@@ -137,13 +163,13 @@ class SignalExtractor:
         patch = depth_m[v1:v2, u1:u2]
         valid = patch[patch > 0.1]
         if len(valid) == 0:
-            return None
+            return None, None
         z = float(np.median(valid))
         if not (0.3 < z < 15.0):   # D455 reliable range
-            return None
+            return None, z
 
         x = (foot_u - self._cx) * z / self._fx
-        return np.array([x, z], dtype=np.float32)
+        return np.array([x, z], dtype=np.float32), z
 
 
 def _min_ped_veh_distance(

@@ -23,6 +23,7 @@ load_dotenv()
 from edge.camera.video_source import VideoSource, MockCamera, RealSenseSource
 from edge.detection.detector import ObjectDetector
 from edge.detection.tracker import ObjectTracker
+from edge.detection.aoi import AOI
 from edge.detection.signal_extractor import SignalExtractor, mock_homography
 from edge.safety.stl_monitor import STLMonitor, SignalFrame
 from edge.safety.trajectory import predict_min_distance
@@ -56,6 +57,12 @@ class SafeEdge:
 
         fps = cam_cfg.get("target_fps", 15.0)
         intrinsics = None   # set only for realsense
+
+        # Area-of-Interest (crop-zoom detection + polygon filter). Built lazily
+        # on the first frame once the real frame size is known.
+        _aoi = cam_cfg.get("aoi") or {}
+        self._aoi_cfg = _aoi if _aoi.get("enabled") else None
+        self._aoi = None
 
         if source == "mock":
             self._camera = MockCamera(fps=fps)
@@ -91,10 +98,13 @@ class SafeEdge:
                 homography = np.load(hfile)
                 logger.info("Camera: webcam %s | homography loaded from %s", cv_source, hfile)
             else:
-                raise RuntimeError(
-                    f"Homography file not found: {hfile}\n"
-                    "Run tools/calibrate_homography.py first."
-                )
+                # Uncalibrated: run with a mock homography so frames still stream
+                # (metric positions are meaningless until calibrated). This lets
+                # the browser calibrator pull a live frame to define the real one.
+                homography = mock_homography()
+                logger.warning("Camera: webcam %s | NO homography (%s) — running "
+                               "UNCALIBRATED with mock projection; distances not metric",
+                               cv_source, hfile)
 
         self._fps       = fps
         self._detector  = ObjectDetector(model_path=model, confidence=conf, device="auto")
@@ -160,8 +170,31 @@ class SafeEdge:
 
             self._last_frame_bgr = frame.color_bgr
 
-            raw_dets = self._detector.detect(frame.color_bgr)
+            # Lazy-build the AOI once we know the real frame size
+            if self._aoi_cfg and self._aoi is None:
+                h, w = frame.color_bgr.shape[:2]
+                self._aoi = AOI(
+                    self._aoi_cfg["polygon"], w, h,
+                    pad=self._aoi_cfg.get("pad", 0.08),
+                    crop_zoom=self._aoi_cfg.get("crop_zoom", True),
+                )
+                logger.info("AOI active — crop_zoom=%s, %d-point polygon",
+                            self._aoi.crop_zoom, len(self._aoi_cfg["polygon"]))
+
+            # (B) crop-zoom detection: detect on the AOI crop, then remap boxes
+            # back to full-frame coords so depth/intrinsics stay correct.
+            if self._aoi and self._aoi.crop_zoom:
+                raw_dets = self._detector.detect(self._aoi.crop(frame.color_bgr))
+                raw_dets = self._aoi.remap_dets(raw_dets)
+            else:
+                raw_dets = self._detector.detect(frame.color_bgr)
+
             tracked  = self._tracker.update(raw_dets, frame.color_bgr.shape[:2])
+
+            # (A) polygon filter: keep only tracks whose foot-point is in the AOI
+            if self._aoi:
+                tracked = [t for t in tracked if self._aoi.contains_foot(t.bbox_xyxy)]
+
             bundle   = self._extractor.extract(tracked, depth_m=frame.depth_m)
 
             d_pred = predict_min_distance(bundle.pedestrians, bundle.vehicles, horizon_s=4.0)
@@ -189,8 +222,13 @@ class SafeEdge:
                 self._ws_publish(state, frame.color_bgr, event)
 
             if self._cloud is not None:
-                # Throttled live-state push for the cloud dashboard (non-blocking)
-                self._cloud.push_state(state, frame.color_bgr)
+                # Throttled live-state push for the cloud dashboard (non-blocking).
+                # Pass tracked detections so the posted frame shows thin yellow
+                # boxes — a lightweight "live" cue (drawn only on posted frames).
+                self._cloud.push_state(
+                    state, frame.color_bgr, tracked,
+                    aoi_poly=(self._aoi.poly if self._aoi else None),
+                )
                 # Periodic Qwen policy re-evaluation (non-blocking; applies patch on reply)
                 if time.monotonic() - self._last_policy_update > 300:
                     self._last_policy_update = time.monotonic()
@@ -289,6 +327,9 @@ class SafeEdge:
             canvas[40:40 + thumb_h, w - thumb_w:w] = d_thumb
             cv2.putText(canvas, "depth (0-6m)", (w - thumb_w + 4, 54),
                         cv2.FONT_HERSHEY_PLAIN, 0.9, (255, 255, 255), 1)
+
+        if self._aoi:
+            self._aoi.draw(canvas)
 
         cv2.imshow("SafeEdge", canvas)
 

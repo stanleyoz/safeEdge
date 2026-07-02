@@ -1,40 +1,49 @@
 #!/bin/bash
-# Run SafeEdge LIVE pipeline inside dustynv/l4t-pytorch with D455 + GPU YOLO.
-# Usage: ./tools/docker_live.sh [--source realsense|webcam] [--mock]
+# Run the FULL SafeEdge edge pipeline live inside dustynv/l4t-pytorch:
+#   D455 → YOLOv8s(GPU) → ByteTrack → SignalExtractor → STL(ρ) → Intervention
+#   → cloud_client → Alibaba Function Compute backend → dashboard
+#
+# Preview shows on VNC display :1. Events/state post to SAFEEDGE_CLOUD_URL.
+# Usage: bash tools/docker_live.sh [--source realsense|webcam|mock]
 
 set -e
 PROJECT="/home/icp/safeedge/qwen_cloud"
 IMAGE="dustynv/l4t-pytorch:r36.4.0"
-SOURCE="${1:---source realsense}"
+SOURCE="${*:---source realsense}"
+DISPLAY="${DISPLAY:-:1}"
+CLOUD_URL="${SAFEEDGE_CLOUD_URL:-https://safeedg-backend-nkmqevdhff.ap-southeast-1.fcapp.run}"
 
-echo "=== SafeEdge LIVE in L4T container ==="
-echo "Source: ${SOURCE}"
+echo "=== SafeEdge FULL pipeline (edge → Alibaba cloud) ==="
+echo "Source:    ${SOURCE}"
+echo "Cloud URL: ${CLOUD_URL}"
+echo "Display:   ${DISPLAY}"
 echo ""
 
-# pyrealsense2 lives in the patient_monitor venv on the host — mount it in
-REALSENSE_LIB="/home/icp/patient_monitor/patient_monitor_env/lib/python3.8/site-packages"
+xhost +local:docker 2>/dev/null || true
 
 docker run --rm --runtime nvidia \
   --privileged \
   --network host \
-  -e DISPLAY="${DISPLAY}" \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v "${PROJECT}:/safeedge" \
-  -v "${REALSENSE_LIB}:/host_rs_lib:ro" \
-  -v /dev/bus/usb:/dev/bus/usb \
-  -v /dev:/dev \
+  -e DISPLAY=":1" \
+  -e XAUTHORITY="/tmp/.Xauthority" \
+  -e SAFEEDGE_CLOUD_URL="${CLOUD_URL}" \
   -e PYTHONPATH=/safeedge \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v /home/icp/.Xauthority:/tmp/.Xauthority:ro \
+  -v "${PROJECT}:/safeedge" \
+  -v /dev/bus/usb:/dev/bus/usb \
+  --device /dev/video0 --device /dev/video1 \
+  -v /usr/lib/aarch64-linux-gnu/libusb-1.0.so.0:/usr/lib/aarch64-linux-gnu/libusb-1.0.so.0:ro \
+  -v /usr/lib/aarch64-linux-gnu/libusb-1.0.so.0.3.0:/usr/lib/aarch64-linux-gnu/libusb-1.0.so.0.3.0:ro \
   "${IMAGE}" \
   bash -c "
-    echo '--- Install deps (numpy<2 required) ---'
-    pip install 'numpy<2' ultralytics supervision rtamt --index-url https://pypi.org/simple/ -q 2>&1 | tail -2
+    echo '--- Installing edge deps (numpy<2 required for torch 2.4) ---'
+    pip install 'numpy<2' ultralytics supervision pyrealsense2 rtamt pyyaml python-dotenv \
+      --index-url https://pypi.org/simple/ -q 2>&1 | tail -3
 
-    echo '--- Try to find pyrealsense2 ---'
-    python3 -c 'import sys; sys.path.insert(0, \"/host_rs_lib\"); import pyrealsense2; print(\"pyrealsense2:\", pyrealsense2.__version__)' 2>/dev/null || \
-      pip install pyrealsense2 --index-url https://pypi.org/simple/ -q
+    echo '--- Checking D455 ---'
+    python3 -c \"import pyrealsense2 as rs; print('RealSense devices:', rs.context().query_devices().size())\"
 
-    echo '--- Starting SafeEdge live pipeline ---'
-    python3 /safeedge/edge/main.py ${SOURCE} \
-      --model yolov8s.pt \
-      --conf 0.25
+    echo '--- Starting full edge pipeline (Q in preview or Ctrl-C to stop) ---'
+    cd /safeedge && python3 -m edge.main ${SOURCE} --model /safeedge/yolov8s.pt --conf 0.25
   "

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeEdge — Homography Calibrator</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0d1117; color:#e6edf3; font-family:'Segoe UI',system-ui,sans-serif; padding:18px; }
+  h1 { font-size:1.1rem; color:#58a6ff; margin-bottom:4px; }
+  p.hint { color:#8b949e; font-size:.82rem; margin-bottom:12px; max-width:80ch; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center; }
+  button { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:6px 12px; font-size:.82rem; cursor:pointer; }
+  button:hover { background:#30363d; } button.primary { background:#1f6feb; border-color:#1f6feb; }
+  #wrap { display:grid; grid-template-columns:1fr 380px; gap:16px; align-items:start; }
+  @media (max-width:1000px){ #wrap { grid-template-columns:1fr; } }
+  canvas { border:1px solid #30363d; border-radius:6px; background:#000; cursor:crosshair; max-width:100%; }
+  table { width:100%; border-collapse:collapse; font-size:.78rem; margin-top:6px; }
+  th,td { border:1px solid #30363d; padding:3px 5px; text-align:center; }
+  th { color:#8b949e; }
+  input { width:60px; background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:4px; padding:2px 4px; font-size:.78rem; }
+  pre { background:#0d1117; border:1px solid #30363d; border-radius:5px; padding:10px; font-size:.72rem; white-space:pre-wrap; word-break:break-all; color:#7ee787; margin-top:8px; }
+  .status { font-size:.78rem; color:#8b949e; margin-top:8px; }
+  h2 { font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; color:#8b949e; margin:12px 0 4px; }
+</style>
+</head>
+<body>
+<h1>SafeEdge ◆ Homography Calibrator</h1>
+<p class="hint">Click ≥4 points on the ground plane whose <b>real-world position you know</b> (use parking-bay
+   geometry: a bay is ~2.5&nbsp;m wide × ~5&nbsp;m long, lanes ~6&nbsp;m). For each clicked point, type its
+   ground coordinates in metres — X = across, Z = away from camera. Pick points spread across the area,
+   not in a line. Then copy the correspondences and send them back — they define the image→ground map
+   so pedestrian↔vehicle distances become metric at any range.</p>
+
+<div class="bar">
+  <button class="primary" onclick="loadFrame()">↻ Load live webcam frame</button>
+  <button onclick="undo()">⤺ Undo point</button>
+  <button onclick="clearPts()">✕ Clear</button>
+  <button onclick="copyOut()">⧉ Copy correspondences</button>
+  <span class="status" id="status">—</span>
+</div>
+
+<div id="wrap">
+  <canvas id="cv" width="1280" height="720"></canvas>
+  <div>
+    <h2>Points — enter world X, Z (metres)</h2>
+    <table id="tbl"><thead><tr><th>#</th><th>img u</th><th>img v</th><th>world X</th><th>world Z</th></tr></thead><tbody></tbody></table>
+    <h2>Correspondences (send this back)</h2>
+    <pre id="json">click ≥4 ground points…</pre>
+  </div>
+</div>
+
+<script>
+const API = (new URLSearchParams(location.search).get("api") || window.SAFEEDGE_API
+            || "https://safeedg-backend-nkmqevdhff.ap-southeast-1.fcapp.run").replace(/\/$/, "");
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+let img = new Image(); let pts = [];   // {u,v,X,Z}
+const setStatus = s => document.getElementById("status").textContent = s;
+
+async function loadFrame(){
+  setStatus("loading live frame…");
+  try{
+    const d = await (await fetch(API+"/api/state/latest",{cache:"no-store"})).json();
+    const b64 = d.frame_jpeg_b64 || d.frame;
+    if(!b64){ setStatus("no live frame — is the webcam pipeline running?"); return; }
+    img = new Image();
+    img.onload = ()=>{ cv.width=img.width; cv.height=img.height; redraw(); setStatus(`frame ${img.width}×${img.height} — click ground points`); };
+    img.src = "data:image/jpeg;base64,"+b64;
+  }catch(e){ setStatus("fetch failed: "+e); }
+}
+function redraw(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if(img.width) ctx.drawImage(img,0,0,cv.width,cv.height);
+  pts.forEach((p,i)=>{ const x=p.u, y=p.v;
+    ctx.fillStyle="#ff3b3b"; ctx.beginPath(); ctx.arc(x,y,5,0,7); ctx.fill();
+    ctx.fillStyle="#fff"; ctx.font="13px sans-serif"; ctx.fillText(i+1, x+7, y-7); });
+  renderTable();
+}
+cv.addEventListener("click", e=>{
+  const r=cv.getBoundingClientRect();
+  const u=Math.round((e.clientX-r.left)/r.width*cv.width);
+  const v=Math.round((e.clientY-r.top)/r.height*cv.height);
+  pts.push({u,v,X:0,Z:0}); redraw();
+});
+function renderTable(){
+  const tb=document.querySelector("#tbl tbody"); tb.innerHTML="";
+  pts.forEach((p,i)=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${i+1}</td><td>${p.u}</td><td>${p.v}</td>`+
+      `<td><input type="number" step="0.1" value="${p.X}" oninput="pts[${i}].X=parseFloat(this.value)||0;out()"></td>`+
+      `<td><input type="number" step="0.1" value="${p.Z}" oninput="pts[${i}].Z=parseFloat(this.value)||0;out()"></td>`;
+    tb.appendChild(tr);
+  });
+  out();
+}
+function out(){
+  document.getElementById("json").textContent = pts.length
+    ? JSON.stringify(pts.map(p=>({img:[p.u,p.v], world:[p.X,p.Z]})))
+    : "click ≥4 ground points…";
+}
+function undo(){ pts.pop(); redraw(); }
+function clearPts(){ pts=[]; redraw(); }
+function copyOut(){ navigator.clipboard.writeText(document.getElementById("json").textContent).then(()=>setStatus("copied — send it back")); }
+loadFrame();
+</script>
+</body>
+</html>
