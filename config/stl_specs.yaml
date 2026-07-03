@@ -32,6 +32,12 @@ specs:
       closing_gate: 0.5         # m/s — radial closing speed above which the
                                 # pedestrian+vehicle count as "going towards each
                                 # other"; below = parked/tangential → not emergency
+      v_veh_floor: 0.5          # m/s — recall floor: within proximity_emergency,
+                                # a moving vehicle ALONE (v_veh_max) also triggers
+                                # EMERGENCY even if the noisy closing signal
+                                # transiently reads below closing_gate. Deliberately
+                                # overlaps static-car jitter — a missed emergency is
+                                # worse than a false alarm.
     intervention: emergency
 
   phi2:

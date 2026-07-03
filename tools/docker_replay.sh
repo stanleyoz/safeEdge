@@ -21,6 +21,11 @@ TAG="${2:-run}"
 PROJECT="/home/icp/safeedge/qwen_cloud"
 IMAGE="dustynv/l4t-pytorch:r36.4.0"
 FPS="${FPS:-7.7}"; CONF="${CONF:-0.25}"; CROP_ZOOM="${CROP_ZOOM:-false}"; MOTION_GATE="${MOTION_GATE:-1.2}"
+# Detector weights. A local path (yolov8s.pt) or a bare ultralytics name
+# (yolo11m.pt, yolov8m.pt) which the container auto-downloads. A larger/newer
+# model gives more temporally-stable boxes → less redraw jitter → lower phantom
+# vehicle velocity, at the cost of live fps.
+MODEL="${MODEL:-/safeedge/yolov8s.pt}"
 TRACK_BUFFER="${TRACK_BUFFER:-0}"   # 0 → auto (fps×4); else frames of lost-track persistence
 TRACK_ACT="${TRACK_ACT:-0.4}"       # ByteTrack activation confidence
 CLOUD="${CLOUD:-0}"                 # 1 → post to dashboard + pace real-time (for screen recording)
@@ -53,6 +58,7 @@ docker run --rm --runtime nvidia \
   -e SAFEEDGE_TRACK_ACT="$TRACK_ACT" \
   -e SAFEEDGE_CLOUD_MIN_EVENT_LEVEL="${MIN_EVENT_LEVEL:-2}" \
   -e SAFEEDGE_VCLOSE_SMOOTH="${VCLOSE_SMOOTH:-5}" \
+  -e SAFEEDGE_POS_SMOOTH="${POS_SMOOTH:-0.35}" \
   "${CLOUD_ENV[@]}" \
   -v "${PROJECT}:/safeedge" \
   "${IMAGE}" \
@@ -72,7 +78,7 @@ yaml.safe_dump(stl,open('$OUT/stl_specs.yaml','w'))
 print('configs written to $OUT')
 PY
     cd /safeedge && python3 -m edge.main --source file --file-path '$CLIP_IN' \
-      --model /safeedge/yolov8s.pt --conf $CONF --fps $FPS --no-record $RT_FLAG 2>&1 | tee '$OUT/replay.log'
+      --model $MODEL --conf $CONF --fps $FPS --no-record $RT_FLAG 2>&1 | tee '$OUT/replay.log'
     echo '=== METRICS [$TAG] ==='
     python3 - <<PY
 import re

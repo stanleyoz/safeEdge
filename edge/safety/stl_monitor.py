@@ -74,7 +74,8 @@ class STLMonitor:
         available = [r for r in (rho1, rho2, rho3, rho4, rho5) if r is not None]
         rho_min = min(available) if available else 0.0
 
-        level = self._intervention_level(rho1, rho2, rho3, frame.v_closing, frame.d_min)
+        level = self._intervention_level(rho1, rho2, rho3, frame.v_closing,
+                                          frame.d_min, frame.v_veh_max)
         scale = self._scale_factor(frame.d_min)
 
         return SafetyState(
@@ -171,24 +172,32 @@ class STLMonitor:
     # ── Intervention helpers ─────────────────────────────────────────────────
 
     def _intervention_level(self, rho1: float, rho2: float, rho3: float,
-                            v_closing: float, d_min: float) -> int:
+                            v_closing: float, d_min: float, v_veh_max: float) -> int:
         # Convergence gate: the monitored hazard is a pedestrian and vehicle
         # CLOSING on each other (relative velocity), NOT absolute vehicle speed.
         # This fires whether the car approaches the pedestrian or vice-versa, and
         # (per spec) does NOT fire for a pedestrian milling AROUND a static/parked
-        # car — that motion is tangential so v_closing ≈ 0. Accepted limitation:
-        # a truly static car that begins moving within the proximity band is only
-        # caught once the motion becomes measurable.
+        # car — that motion is tangential so v_closing ≈ 0.
+        #
+        # RECALL FLOOR (operator directive: a missed emergency is worse than a
+        # false alarm): v_closing is a single derived value that can transiently
+        # read near-zero for a frame or two even while a vehicle is visibly
+        # moving close to a pedestrian (monocular homography noise on the
+        # instantaneous radial component). So ALSO escalate to EMERGENCY on
+        # proximity + absolute vehicle speed alone, without requiring measured
+        # convergence — v_veh_floor deliberately overlaps with static-car jitter
+        # (favouring false positives over a missed real danger).
         p = self._specs["phi1"]["params"]
         proximity    = p.get("proximity_emergency", 1.8)   # m — hard danger band
         closing_gate = p.get("closing_gate", 0.5)          # m/s radial closing
-        converging   = v_closing >= closing_gate
+        v_veh_floor  = p.get("v_veh_floor", 0.5)           # m/s — moving car alone, within proximity
+        converging   = v_closing >= closing_gate or v_veh_max >= v_veh_floor
         warn_rho  = self._intervention_cfg["warning"]["rho_min"]
         aware_rho = self._intervention_cfg["awareness"]["rho_min"]
 
         if rho1 <= 0.0:                                     # close band: d_min < clearance_critical
             if d_min < proximity and converging:
-                raw = 3                                     # EMERGENCY: close AND converging
+                raw = 3                                     # EMERGENCY: close AND (converging OR car moving)
             elif rho3 <= 0.0 or rho2 <= 0.0:
                 raw = 2                                     # converging/predictive, not yet <proximity
             else:

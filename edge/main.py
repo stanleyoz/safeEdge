@@ -358,7 +358,9 @@ class SafeEdge:
 
             if event is not None:
                 self._last_interp = self._local_ai.interpret(state)
-                logger.info("[L%d] %s | %s", state.intervention_level, event.message, self._last_interp)
+                logger.info("[L%d] d_min=%.2f v_veh_max=%.2f v_closing=%.2f | %s | %s",
+                            state.intervention_level, bundle.d_min, bundle.v_veh_max,
+                            bundle.v_closing, event.message, self._last_interp)
 
             if self._preview:
                 self._show_preview(frame, tracked, bundle, state, frame.depth_m)
