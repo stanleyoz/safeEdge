@@ -237,10 +237,19 @@ class SafeEdge:
         # it over HTTP. With no URL set, the edge runs fully standalone/offline.
         cloud_url = os.environ.get("SAFEEDGE_CLOUD_URL", "").strip()
         self._cloud_enabled = bool(cloud_url)
+        # Only ship intervention EVENTS (which trigger an inline Qwen incident
+        # report on the backend) at/above this level. Default 2 (WARNING+) keeps
+        # full reporting; raise to 3 to post only EMERGENCY events, which keeps
+        # the serverless backend responsive during dense bursts (a flood of L2
+        # Qwen calls can saturate the FC instance and stall the dashboard). Live
+        # state (badge/clock/feed) is pushed separately and is unaffected.
+        self._cloud_min_event_level = int(
+            os.environ.get("SAFEEDGE_CLOUD_MIN_EVENT_LEVEL", "2"))
         if self._cloud_enabled:
             from edge.cloud_client import CloudClient
             self._cloud = CloudClient(base_url=cloud_url)
-            logger.info("Cloud backend enabled → %s", cloud_url)
+            logger.info("Cloud backend enabled → %s (min event level %d)",
+                        cloud_url, self._cloud_min_event_level)
         else:
             self._cloud = None
             logger.info("Cloud backend disabled (SAFEEDGE_CLOUD_URL unset) — edge standalone")
@@ -487,7 +496,9 @@ class SafeEdge:
         })
         # Ship the event to the cloud backend — WARNING+ events trigger a
         # Qwen-VL incident report there. Non-blocking; safe if cloud is down.
-        if self._cloud is not None:
+        # Gate by level to avoid flooding the serverless backend (see
+        # _cloud_min_event_level); live state is still pushed every frame.
+        if self._cloud is not None and event.new_level >= self._cloud_min_event_level:
             self._cloud.push_event(event, self._last_frame_bgr)
 
     def _request_cloud_policy(self) -> None:

@@ -39,6 +39,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("safeedge.backend")
 
+# Generate a Qwen-VL incident report only at/above this level. The event LOG
+# still captures EVERY event (a cheap store write); gating the multi-second,
+# blocking vision call to EMERGENCY keeps the serverless instance responsive
+# under dense bursts while still showcasing Qwen-VL on the highest-impact
+# events. Default 2 (all WARNING+) preserves prior behaviour; the deployment
+# sets INCIDENT_MIN_LEVEL=3 so the dashboard never stalls during the demo.
+INCIDENT_MIN_LEVEL = int(os.environ.get("INCIDENT_MIN_LEVEL", "2"))
+
 app = FastAPI(title="SafeEdge Cloud Backend", version="1.0")
 
 # Allow the dashboard to be served from any origin (laptop / OSS / GitHub Pages)
@@ -137,7 +145,7 @@ async def post_event(event: EventPush):
     # instance once the response is sent, so fire-and-forget work never finishes.
     # The edge client is non-blocking (thread pool), so a slower response is fine.
     incident_id = None
-    if event.level >= 2:
+    if event.level >= INCIDENT_MIN_LEVEL:
         incident_id = await _generate_incident(ev)
     return {"ok": True, "event_id": eid, "incident_id": incident_id}
 

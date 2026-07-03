@@ -51,6 +51,8 @@ docker run --rm --runtime nvidia \
   -e SAFEEDGE_CFG_STL="$OUT/stl_specs.yaml" \
   -e SAFEEDGE_TRACK_BUFFER="$TRACK_BUFFER" \
   -e SAFEEDGE_TRACK_ACT="$TRACK_ACT" \
+  -e SAFEEDGE_CLOUD_MIN_EVENT_LEVEL="${MIN_EVENT_LEVEL:-2}" \
+  -e SAFEEDGE_VCLOSE_SMOOTH="${VCLOSE_SMOOTH:-5}" \
   "${CLOUD_ENV[@]}" \
   -v "${PROJECT}:/safeedge" \
   "${IMAGE}" \
