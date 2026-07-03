@@ -29,6 +29,7 @@ class SignalFrame:
     v_veh_max: float              # maximum vehicle speed in zone (m/s)
     d_pred: float                 # predicted minimum distance at t+T_horizon (m)
     alert_active: float           # 1.0 if an alert is currently active, else 0.0
+    v_closing: float = 0.0        # radial closing speed of nearest pair (m/s, +ve = converging)
 
 
 @dataclass
@@ -73,7 +74,7 @@ class STLMonitor:
         available = [r for r in (rho1, rho2, rho3, rho4, rho5) if r is not None]
         rho_min = min(available) if available else 0.0
 
-        level = self._intervention_level(rho1, rho2, rho3, frame.v_veh_max)
+        level = self._intervention_level(rho1, rho2, rho3, frame.v_closing, frame.d_min)
         scale = self._scale_factor(frame.d_min)
 
         return SafetyState(
@@ -170,27 +171,36 @@ class STLMonitor:
     # ── Intervention helpers ─────────────────────────────────────────────────
 
     def _intervention_level(self, rho1: float, rho2: float, rho3: float,
-                            v_veh_max: float) -> int:
-        # Raw level from robustness (rho1 = d_min - clearance_critical)
-        if rho1 <= 0.0:
-            raw = 3
+                            v_closing: float, d_min: float) -> int:
+        # Convergence gate: the monitored hazard is a pedestrian and vehicle
+        # CLOSING on each other (relative velocity), NOT absolute vehicle speed.
+        # This fires whether the car approaches the pedestrian or vice-versa, and
+        # (per spec) does NOT fire for a pedestrian milling AROUND a static/parked
+        # car — that motion is tangential so v_closing ≈ 0. Accepted limitation:
+        # a truly static car that begins moving within the proximity band is only
+        # caught once the motion becomes measurable.
+        p = self._specs["phi1"]["params"]
+        proximity    = p.get("proximity_emergency", 1.8)   # m — hard danger band
+        closing_gate = p.get("closing_gate", 0.5)          # m/s radial closing
+        converging   = v_closing >= closing_gate
+        warn_rho  = self._intervention_cfg["warning"]["rho_min"]
+        aware_rho = self._intervention_cfg["awareness"]["rho_min"]
+
+        if rho1 <= 0.0:                                     # close band: d_min < clearance_critical
+            if d_min < proximity and converging:
+                raw = 3                                     # EMERGENCY: close AND converging
+            elif rho3 <= 0.0 or rho2 <= 0.0:
+                raw = 2                                     # converging/predictive, not yet <proximity
+            else:
+                raw = 1                                     # close but static (parked-car proximity)
         elif rho2 <= 0.0 or rho3 <= 0.0:
+            raw = 2                                         # predictive / speed-proximity warning at range
+        elif rho1 <= warn_rho:
             raw = 2
-        elif rho1 <= self._intervention_cfg["warning"]["rho_min"]:
-            raw = 2
-        elif rho1 <= self._intervention_cfg["awareness"]["rho_min"]:
+        elif rho1 <= aware_rho:
             raw = 1
         else:
             raw = 0
-
-        # Motion gate: the monitored hazard is a MOVING vehicle near a pedestrian.
-        # A stationary/parked vehicle (v below the gate — includes homography
-        # jitter) is not dangerous, so cap the level at AWARENESS. This is what
-        # turns proximity-alarm into dynamic-danger detection and kills the
-        # "parked car 1.4 m away → EMERGENCY" false positives.
-        motion_gate = self._specs["phi1"]["params"].get("motion_gate", 0.0)
-        if v_veh_max < motion_gate:
-            raw = min(raw, 1)
         return raw
 
     def _scale_factor(self, d_min: float) -> float:

@@ -38,6 +38,7 @@ class RawDetection:
 class SignalBundle:
     d_min: float
     v_veh_max: float
+    v_closing: float                  # radial closing speed of nearest pair (m/s, +ve = converging)
     pedestrians: list[TrackedObject]
     vehicles: list[TrackedObject]
 
@@ -114,19 +115,21 @@ class SignalExtractor:
 
         self._vel_est.prune(active_ids)
 
-        d_min     = _min_ped_veh_distance(pedestrians, vehicles)
+        d_min, v_closing = _nearest_pair_closing(pedestrians, vehicles)
         v_veh_max = max((float(np.linalg.norm(v.vel)) for v in vehicles), default=0.0)
 
         # Throttled depth-probe diagnostic (~1/s at 15fps) — shows which objects
         # get a valid metric position vs are dropped (e.g. beyond D455 range).
         self._dbg_n += 1
         if dbg and self._dbg_n % 15 == 0:
-            logger.info("depth-probe [%s]: %s  →  d_min=%.1f v_veh_max=%.2f",
-                        "depth" if use_depth else "homog", " | ".join(dbg), d_min, v_veh_max)
+            logger.info("depth-probe [%s]: %s  →  d_min=%.1f v_veh_max=%.2f v_closing=%.2f",
+                        "depth" if use_depth else "homog", " | ".join(dbg),
+                        d_min, v_veh_max, v_closing)
 
         return SignalBundle(
             d_min=d_min,
             v_veh_max=v_veh_max,
+            v_closing=v_closing,
             pedestrians=pedestrians,
             vehicles=vehicles,
         )
@@ -172,12 +175,20 @@ class SignalExtractor:
         return np.array([x, z], dtype=np.float32), z
 
 
-def _min_ped_veh_distance(
+def _nearest_pair_closing(
     pedestrians: list[TrackedObject],
     vehicles: list[TrackedObject],
-) -> float:
+) -> tuple[float, float]:
+    """Return (d_min, v_closing) for the closest pedestrian-vehicle pair.
+
+    v_closing is the RADIAL closing speed using the pair's RELATIVE velocity —
+    positive when they are converging ("going towards each other"), ~0 when the
+    pedestrian moves tangentially around a static car, negative when separating.
+    This is the true dynamic-danger discriminator (vs absolute vehicle speed):
+        v_closing = -d|Δpos|/dt = -(Δpos · Δvel) / |Δpos|
+    """
     if not pedestrians or not vehicles:
-        return _SENTINEL_DISTANCE
+        return _SENTINEL_DISTANCE, 0.0
 
     ped_pts = np.array([p.xyz[[0, 2]] for p in pedestrians])
     veh_pts = np.array([v.xyz[[0, 2]] for v in vehicles])
@@ -185,7 +196,15 @@ def _min_ped_veh_distance(
     # Brute-force pairwise — N is tiny (< 20 objects per frame)
     diffs = ped_pts[:, None, :] - veh_pts[None, :, :]   # (P, V, 2)
     dists = np.linalg.norm(diffs, axis=-1)               # (P, V)
-    return float(dists.min())
+    pi, vi = np.unravel_index(int(dists.argmin()), dists.shape)
+    d_min = float(dists[pi, vi])
+
+    ped, veh = pedestrians[pi], vehicles[vi]
+    rel_pos = (ped.xyz - veh.xyz)[[0, 2]]
+    rel_vel = (ped.vel - veh.vel)[[0, 2]]
+    n = float(np.linalg.norm(rel_pos))
+    v_closing = 0.0 if n < 1e-6 else float(-(rel_pos @ rel_vel) / n)
+    return d_min, v_closing
 
 
 def mock_homography(world_w: float = 12.0, world_h: float = 10.0,

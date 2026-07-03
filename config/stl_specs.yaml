@@ -25,8 +25,13 @@ specs:
     rho_expr: "d_min - {clearance_critical}"
     params:
       clearance_critical: 3.0   # metres — pedestrian within 3 m = danger band
-      motion_gate: 0.8          # m/s — vehicle must move faster than this for
-                                # danger; below = parked (incl. jitter) → capped
+      motion_gate: 0.8          # m/s — legacy absolute-speed gate (superseded by
+                                # closing_gate; kept for reference/back-compat)
+      proximity_emergency: 1.8  # metres — EMERGENCY only when d_min below this AND
+                                # the pair is converging (see closing_gate)
+      closing_gate: 0.5         # m/s — radial closing speed above which the
+                                # pedestrian+vehicle count as "going towards each
+                                # other"; below = parked/tangential → not emergency
     intervention: emergency
 
   phi2:
