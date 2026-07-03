@@ -12,6 +12,8 @@ Output each frame:
 from __future__ import annotations
 
 import logging
+import os
+from collections import deque
 import numpy as np
 from dataclasses import dataclass
 
@@ -38,7 +40,7 @@ class RawDetection:
 class SignalBundle:
     d_min: float
     v_veh_max: float
-    v_closing: float                  # radial closing speed of nearest pair (m/s, +ve = converging)
+    v_closing: float                  # mutual closing speed of nearest pair (m/s, +ve = converging), median-smoothed
     pedestrians: list[TrackedObject]
     vehicles: list[TrackedObject]
 
@@ -61,10 +63,21 @@ class SignalExtractor:
         history_frames: int = 6,
         fps: float = 15.0,
         intrinsics: tuple[float, float, float, float] | None = None,
+        vclose_smooth: int | None = None,
     ):
         self._H = homography
         self._vel_est = VelocityEstimator(history_frames, fps)
         self._dbg_n = 0
+        # Rolling-median filter on v_closing. Homography position jitter can spike
+        # the nearest pair's radial velocity for a single frame on an essentially
+        # static car — enough to trip the EMERGENCY convergence gate falsely. A
+        # genuine approach keeps a majority of frames converging, so the median
+        # stays above the gate while isolated spikes are rejected. Window in
+        # frames; env-overridable for offline tuning (SAFEEDGE_VCLOSE_SMOOTH).
+        n = vclose_smooth if vclose_smooth is not None else \
+            int(os.environ.get("SAFEEDGE_VCLOSE_SMOOTH", "5"))
+        self._vclose_smooth = max(1, n)
+        self._vclose_hist: deque[float] = deque(maxlen=self._vclose_smooth)
         # Unpack (fx, fy, cx, cy) for depth back-projection
         if intrinsics is not None:
             self._fx, self._fy, self._cx, self._cy = intrinsics
@@ -115,16 +128,26 @@ class SignalExtractor:
 
         self._vel_est.prune(active_ids)
 
-        d_min, v_closing = _nearest_pair_closing(pedestrians, vehicles)
+        d_min, v_pair_raw, veh_closing_raw = _nearest_pair_closing(pedestrians, vehicles)
+        self._vclose_hist.append(v_pair_raw)
+        # The EMERGENCY gate keys on the MUTUAL closing of the pair (v_pair) —
+        # "pedestrian and vehicle moving closer together" — median-smoothed to
+        # trim jitter flaps. This is recall-first (a missed emergency is worse
+        # than a false alarm): it fires whether the car drives at the pedestrian
+        # OR the pedestrian moves into the car's path, since monocular homography
+        # badly under-measures the car's own radial approach (veh_closing peaks
+        # ~0.2 even on a real approach). veh_closing is kept for diagnostics.
+        v_closing = float(np.median(self._vclose_hist))
         v_veh_max = max((float(np.linalg.norm(v.vel)) for v in vehicles), default=0.0)
 
         # Throttled depth-probe diagnostic (~1/s at 15fps) — shows which objects
         # get a valid metric position vs are dropped (e.g. beyond D455 range).
         self._dbg_n += 1
         if dbg and self._dbg_n % 15 == 0:
-            logger.info("depth-probe [%s]: %s  →  d_min=%.1f v_veh_max=%.2f v_closing=%.2f",
+            logger.info("depth-probe [%s]: %s  →  d_min=%.1f v_veh_max=%.2f "
+                        "closing=%.2f(pair_raw %.2f veh_raw %.2f)",
                         "depth" if use_depth else "homog", " | ".join(dbg),
-                        d_min, v_veh_max, v_closing)
+                        d_min, v_veh_max, v_closing, v_pair_raw, veh_closing_raw)
 
         return SignalBundle(
             d_min=d_min,
@@ -178,17 +201,26 @@ class SignalExtractor:
 def _nearest_pair_closing(
     pedestrians: list[TrackedObject],
     vehicles: list[TrackedObject],
-) -> tuple[float, float]:
-    """Return (d_min, v_closing) for the closest pedestrian-vehicle pair.
+) -> tuple[float, float, float]:
+    """Return (d_min, v_closing, veh_closing) for the closest ped-vehicle pair.
 
-    v_closing is the RADIAL closing speed using the pair's RELATIVE velocity —
-    positive when they are converging ("going towards each other"), ~0 when the
-    pedestrian moves tangentially around a static car, negative when separating.
-    This is the true dynamic-danger discriminator (vs absolute vehicle speed):
-        v_closing = -d|Δpos|/dt = -(Δpos · Δvel) / |Δpos|
+    Let n̂ be the unit vector from the vehicle toward the pedestrian.
+      v_closing  = -(Δpos · Δvel)/|Δpos|  — MUTUAL radial closing of the pair;
+                   positive when going towards each other. NOTE this includes the
+                   pedestrian's OWN motion, so a pedestrian walking toward a
+                   PARKED car reads as strongly "closing" though nothing dangerous
+                   is happening.
+      veh_closing = veh.vel · n̂           — the VEHICLE's velocity component
+                   toward the pedestrian alone. Positive only when the CAR is
+                   driving at the pedestrian; ~0 for a parked car regardless of
+                   what the pedestrian does; negative when the car pulls away.
+
+    veh_closing is the EMERGENCY discriminator (a car bearing down on a person),
+    matching operator ground-truth that "pedestrian approaching a parked car" is
+    a WARNING, not an emergency. v_closing is retained for diagnostics.
     """
     if not pedestrians or not vehicles:
-        return _SENTINEL_DISTANCE, 0.0
+        return _SENTINEL_DISTANCE, 0.0, 0.0
 
     ped_pts = np.array([p.xyz[[0, 2]] for p in pedestrians])
     veh_pts = np.array([v.xyz[[0, 2]] for v in vehicles])
@@ -200,11 +232,16 @@ def _nearest_pair_closing(
     d_min = float(dists[pi, vi])
 
     ped, veh = pedestrians[pi], vehicles[vi]
-    rel_pos = (ped.xyz - veh.xyz)[[0, 2]]
+    rel_pos = (ped.xyz - veh.xyz)[[0, 2]]     # vehicle → pedestrian
     rel_vel = (ped.vel - veh.vel)[[0, 2]]
+    veh_vel = veh.vel[[0, 2]]
     n = float(np.linalg.norm(rel_pos))
-    v_closing = 0.0 if n < 1e-6 else float(-(rel_pos @ rel_vel) / n)
-    return d_min, v_closing
+    if n < 1e-6:
+        return d_min, 0.0, 0.0
+    nhat = rel_pos / n
+    v_closing   = float(-(rel_pos @ rel_vel) / n)   # mutual (diagnostic)
+    veh_closing = float(veh_vel @ nhat)             # car toward ped (gate)
+    return d_min, v_closing, veh_closing
 
 
 def mock_homography(world_w: float = 12.0, world_h: float = 10.0,
