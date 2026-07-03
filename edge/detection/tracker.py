@@ -11,14 +11,17 @@ from edge.detection.signal_extractor import RawDetection
 
 
 class ObjectTracker:
-    def __init__(self, lost_track_buffer: int = 30):
-        # supervision ≥0.22 renamed ByteTracker → ByteTrack
+    def __init__(self, lost_track_buffer: int = 30, frame_rate: int = 30,
+                 track_activation_threshold: float = 0.4):
+        # supervision ≥0.22 renamed ByteTracker → ByteTrack.
+        # frame_rate MUST match the real pipeline fps: ByteTrack scales how long a
+        # lost track survives by frame_rate — a 30 default at ~8 fps churns IDs.
         TrackerCls = getattr(sv, "ByteTrack", None) or sv.ByteTracker
         self._tracker = TrackerCls(
-            track_activation_threshold=0.4,
+            track_activation_threshold=track_activation_threshold,
             lost_track_buffer=lost_track_buffer,
             minimum_matching_threshold=0.8,
-            frame_rate=30,
+            frame_rate=frame_rate,
         )
 
     def update(

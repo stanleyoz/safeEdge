@@ -23,6 +23,7 @@ config/homography.npy
 demo/
 *.mp4
 *.bag
+data/captures/          # raw-feed recordings + their .meta.json sidecars
 
 # IDE
 .vscode/

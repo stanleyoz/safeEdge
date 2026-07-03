@@ -11,6 +11,7 @@ advance warning for the scenarios we care about (parking lot speeds).
 """
 from __future__ import annotations
 
+import os
 import numpy as np
 from dataclasses import dataclass
 from typing import Sequence
@@ -83,23 +84,38 @@ class VelocityEstimator:
     """
 
     def __init__(self, history_frames: int = 10, fps: float = 30.0,
-                 max_speed: float = 5.0):
+                 max_speed: float = 5.0, pos_smooth: float | None = None):
         self._history: dict[int, list[np.ndarray]] = {}
+        self._smoothed: dict[int, np.ndarray] = {}
         self._n = history_frames
         self._dt = 1.0 / fps
         self._max_speed = max_speed                 # physical cap (m/s)
         self._max_jump = max_speed * self._dt       # max plausible move / frame
+        # EMA position low-pass (per track). A parked car's bounding box is
+        # redrawn slightly every frame; the homography amplifies a few px of
+        # foot-point wobble into a phantom velocity approaching ~1 m/s. Smoothing
+        # the POSITION before differentiating settles a static object toward zero
+        # while real motion still passes (with a small lag). alpha in (0,1]:
+        # 1.0 = no smoothing, lower = calmer. Env-tunable for offline sweeps.
+        a = pos_smooth if pos_smooth is not None else \
+            float(os.environ.get("SAFEEDGE_POS_SMOOTH", "0.35"))
+        self._alpha = min(1.0, max(0.05, a))
 
     def update(self, track_id: int, xyz: np.ndarray) -> None:
-        buf = self._history.setdefault(track_id, [])
-        # Outlier rejection: ignore a sample implying an impossible jump — this
-        # is usually bbox/homography pixel-jitter (huge at long range), not real
-        # motion. Holding the previous position avoids phantom velocity spikes.
-        if buf:
-            jump = float(np.linalg.norm((xyz - buf[-1])[[0, 2]]))
-            if jump > self._max_jump:
+        prev_sm = self._smoothed.get(track_id)
+        # Outlier rejection on the RAW sample vs the last smoothed position: a
+        # jump beyond the physical cap is bbox/homography glitch, not motion —
+        # drop it so it neither spikes velocity nor poisons the EMA.
+        if prev_sm is not None:
+            if float(np.linalg.norm((xyz - prev_sm)[[0, 2]])) > self._max_jump:
                 return
-        buf.append(xyz.copy())
+            sm = self._alpha * xyz + (1.0 - self._alpha) * prev_sm
+        else:
+            sm = xyz.copy()
+        self._smoothed[track_id] = sm
+
+        buf = self._history.setdefault(track_id, [])
+        buf.append(sm.copy())
         if len(buf) > self._n:
             buf.pop(0)
 
@@ -122,3 +138,4 @@ class VelocityEstimator:
         stale = [k for k in self._history if k not in active_ids]
         for k in stale:
             del self._history[k]
+            self._smoothed.pop(k, None)

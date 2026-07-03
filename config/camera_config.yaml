@@ -27,13 +27,11 @@ mock:
 # The default is a centred trapezoid — ADJUST to your camera's walkway/rows.
 aoi:
   enabled: true
-  crop_zoom: false   # filter-only: thin lane band would clip tall cars if cropped;
-                     # detect on full frame, then keep objects with feet in the zone
+  crop_zoom: true    # crop-zoom for recall on distant approaching pedestrian;
+                     # WATCH: may clip tops of tall/near cars — revert to false if so
   pad: 0.08
-  polygon:           # wide zone: middle road + parked-car entry/exit (catch pull-outs)
-    - [0.212, 0.685]
-    - [0.994, 0.699]
-    - [0.997, 0.580]
-    - [0.706, 0.558]
-    - [0.416, 0.555]
-    - [0.218, 0.577]
+  polygon:           # wide approach+car band (full width, tracks pedestrian before car area)
+    - [0.03, 0.787]
+    - [0.993, 0.782]
+    - [0.99, 0.56]
+    - [0.034, 0.541]

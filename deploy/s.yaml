@@ -36,6 +36,9 @@ resources:
         QWEN_VISION_MODEL: qwen-vl-max
         QWEN_TEXT_MODEL: qwen-turbo
         LOCATION_LABEL: Car Park
+        # Event LOG captures all events; Qwen-VL incident report only for
+        # EMERGENCY — keeps the dashboard responsive during dense bursts.
+        INCIDENT_MIN_LEVEL: "3"
         FORECAST_INTERVAL_S: "3600"
         # Tablestore (create instance first — see deploy/README.md):
         TABLESTORE_ENDPOINT: ${env(TABLESTORE_ENDPOINT)}
