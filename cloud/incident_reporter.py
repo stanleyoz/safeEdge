@@ -11,7 +11,7 @@ import base64
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Optional, TYPE_CHECKING
 
 import cv2
@@ -23,6 +23,11 @@ if TYPE_CHECKING:
     from edge.safety.intervention import InterventionEvent
 
 logger = logging.getLogger(__name__)
+
+# Report times are narrated in the deployment's local zone (default GMT+8), not
+# the FC server's UTC. Override with SAFEEDGE_TZ_OFFSET (hours) if relocating.
+_TZ = timezone(timedelta(hours=float(os.environ.get("SAFEEDGE_TZ_OFFSET", "8"))))
+_TZ_LABEL = f"GMT+{int(float(os.environ.get('SAFEEDGE_TZ_OFFSET', '8')))}"
 
 _SYSTEM = """
 You are a safety incident reporter for a commercial car park monitoring system.
@@ -57,7 +62,8 @@ class IncidentReporter:
         event: "InterventionEvent",
         frame_bgr: Optional[np.ndarray] = None,
     ) -> Optional[str]:
-        ts = datetime.fromtimestamp(event.timestamp).strftime("%Y-%m-%d %H:%M:%S")
+        ts = datetime.fromtimestamp(event.timestamp, _TZ).strftime("%Y-%m-%d %H:%M:%S") \
+             + f" {_TZ_LABEL}"
         context = {
             "timestamp": ts,
             "location": self._location,
