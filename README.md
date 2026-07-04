@@ -1,6 +1,6 @@
 # SafeEdge — Formally-Verified Edge Safety Agent
 
-<!--Real-time pedestrian–vehicle safety monitoring built for the **Global AI Hackathon with Qwen Cloud** (Track 5: **EdgeAgent**).--!>
+<!--Real-time pedestrian–vehicle safety monitoring built for the **Global AI Hackathon with Qwen Cloud** (Track 5: **EdgeAgent**).-->
 
 A Jetson Orin NX watches a scene with an Intel RealSense D455 and continuously computes *how safe* it is — not a vague confidence score, but a mathematically rigorous **robustness value (ρ)** from Signal Temporal Logic (STL), evaluated at 30 Hz on-device. A Qwen-powered **cloud brain deployed on Alibaba Cloud** adds multimodal incident reporting, adaptive safety policy, and risk forecasting — without ever sitting in the safety-critical path.
 
