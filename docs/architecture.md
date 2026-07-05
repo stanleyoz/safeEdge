@@ -17,7 +17,7 @@ intelligence when available.
 flowchart LR
     subgraph EDGE["🛰️ EDGE — Jetson Orin NX 16GB (real-time, offline-capable)"]
         direction TB
-        CAM["Intel RealSense D455<br/>RGB + aligned depth<br/><i>video_source.py</i>"]
+        CAM["USB camera + homography<br/>ground-plane projection<br/><i>video_source.py</i>"]
         DET["YOLOv8s — GPU/TensorRT<br/>person · vehicle detect<br/><i>detector.py</i>"]
         TRK["ByteTrack tracker<br/><i>tracker.py</i>"]
         SIG["Signal Extractor<br/>metric d_min · v_veh · d_pred<br/><i>signal_extractor.py</i>"]
@@ -82,7 +82,7 @@ flowchart LR
 
 ```mermaid
 sequenceDiagram
-    participant CAM as D455 Camera
+    participant CAM as USB Camera
     participant STL as STL Monitor (edge)
     participant INT as Intervention Engine
     participant CC as Cloud Client
@@ -147,6 +147,6 @@ sequenceDiagram
 
 ## 5. Technology stack
 
-- **Edge:** Jetson Orin NX 16GB · JetPack 6.2 · YOLOv8s (Ultralytics, GPU) · ByteTrack (supervision) · `rtamt` (STL) · Intel RealSense D455 · Ollama (local Qwen2.5-VL)
+- **Edge:** Jetson Orin NX 16GB · JetPack 6.2 · YOLOv8s (Ultralytics, GPU) · ByteTrack (supervision) · `rtamt` (STL) · USB camera + homography · Ollama (local Qwen2.5-VL)
 - **Cloud:** Alibaba Cloud Function Compute 3.0 · Tablestore · Container Registry (ACR) · FastAPI · Uvicorn
 - **AI:** Qwen Cloud / DashScope (intl) — `qwen-max`, `qwen-vl-max`, `qwen-turbo`, local `qwen2.5-vl`
