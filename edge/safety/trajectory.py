@@ -84,9 +84,11 @@ class VelocityEstimator:
     """
 
     def __init__(self, history_frames: int = 10, fps: float = 30.0,
-                 max_speed: float = 5.0, pos_smooth: float | None = None):
+                 max_speed: float = 5.0, pos_smooth: float | None = None,
+                 resync_after: int = 3):
         self._history: dict[int, list[np.ndarray]] = {}
         self._smoothed: dict[int, np.ndarray] = {}
+        self._misses: dict[int, int] = {}
         self._n = history_frames
         self._dt = 1.0 / fps
         self._max_speed = max_speed                 # physical cap (m/s)
@@ -100,18 +102,35 @@ class VelocityEstimator:
         a = pos_smooth if pos_smooth is not None else \
             float(os.environ.get("SAFEEDGE_POS_SMOOTH", "0.35"))
         self._alpha = min(1.0, max(0.05, a))
+        # Consecutive outlier-rejections tolerated before resyncing to the raw
+        # sample. Without this, rejecting a jump vs the SMOOTHED reference is a
+        # one-way lock: the reference never advances, so a real fast move (or a
+        # detection gap from brief occlusion) makes every subsequent frame fail
+        # the same check even harder — velocity freezes at its last value
+        # forever. Found live: v_veh_max stuck at one value for the rest of a run.
+        self._resync_after = max(1, resync_after)
 
     def update(self, track_id: int, xyz: np.ndarray) -> None:
         prev_sm = self._smoothed.get(track_id)
-        # Outlier rejection on the RAW sample vs the last smoothed position: a
-        # jump beyond the physical cap is bbox/homography glitch, not motion —
-        # drop it so it neither spikes velocity nor poisons the EMA.
         if prev_sm is not None:
-            if float(np.linalg.norm((xyz - prev_sm)[[0, 2]])) > self._max_jump:
+            jump = float(np.linalg.norm((xyz - prev_sm)[[0, 2]]))
+            if jump > self._max_jump:
+                misses = self._misses.get(track_id, 0) + 1
+                self._misses[track_id] = misses
+                if misses < self._resync_after:
+                    return  # transient glitch — hold position, wait for confirmation
+                # Sustained disagreement: this is real motion (or a detection
+                # gap) we lost sync with, not one-frame jitter. Resync hard —
+                # accept the raw sample as the new anchor and drop stale history
+                # (it no longer reflects where the object actually is).
+                self._smoothed[track_id] = xyz.copy()
+                self._history[track_id] = [xyz.copy()]
+                self._misses[track_id] = 0
                 return
             sm = self._alpha * xyz + (1.0 - self._alpha) * prev_sm
         else:
             sm = xyz.copy()
+        self._misses[track_id] = 0
         self._smoothed[track_id] = sm
 
         buf = self._history.setdefault(track_id, [])
@@ -139,3 +158,4 @@ class VelocityEstimator:
         for k in stale:
             del self._history[k]
             self._smoothed.pop(k, None)
+            self._misses.pop(k, None)
