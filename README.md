@@ -4,7 +4,7 @@
 
 A Jetson Orin NX watches a scene with an Intel RealSense D455 and continuously computes *how safe* it is — not a vague confidence score, but a mathematically rigorous **robustness value (ρ)** from Signal Temporal Logic (STL), evaluated at 30 Hz on-device. A Qwen-powered **cloud brain deployed on Alibaba Cloud** adds multimodal incident reporting, adaptive safety policy, and risk forecasting — without ever sitting in the safety-critical path.
 
-> **For engineering teammates:** this README is the single reference for concept → architecture → deployment → current status. See the rendered system diagram in [`docs/architecture.html`](docs/architecture.html) (self-contained, opens offline).
+> **For engineering teammates:** this README is the single reference for concept → architecture → deployment → current status. See the rendered system diagram in [`docs/submission/architecture.html`](docs/submission/architecture.html) (self-contained, opens offline).
 
 ---
 
@@ -64,7 +64,7 @@ Three tiers. The edge is real-time and offline-capable; the Alibaba-hosted backe
                               Qwen Cloud: qwen-max · qwen-vl-max · qwen-turbo
 ```
 
-Full interactive/accessible diagram: **[`docs/architecture.html`](docs/architecture.html)**.
+Full interactive/accessible diagram: **[`docs/submission/architecture.html`](docs/submission/architecture.html)**.
 
 **Key design principle:** no LLM in the safety-critical path. The deterministic STL monitor decides safety; Qwen explains, reports, and tunes. `cloud_client.py` is fire-and-forget with hard timeouts on a worker thread, so cloud latency or outages can never stall the 30 Hz loop.
 
@@ -167,7 +167,7 @@ qwen_cloud/
 │   ├── build_and_push.sh       # Docker buildx (amd64) → ACR
 │   └── README.md               # Full deploy runbook + proof-of-deployment checklist
 │
-├── docs/architecture.html      # Accessible system diagram (self-contained)
+├── docs/submission/architecture.html # Accessible system diagram (self-contained)
 │
 ├── tools/
 │   ├── live_record.py          # D455 + GPU YOLO + distance annotations → MP4
@@ -319,7 +319,7 @@ curl evidences **both** the compute and the datastore are Alibaba services.
 | Backend Docker image (amd64) | ✅ builds + runs against **real Tablestore + Qwen** |
 | Preflight check (`tools/check_alibaba_creds.py`) | ✅ creds + Tablestore validated |
 | Serverless Devs CLI (`s`) | ✅ installed (v3.1.10) |
-| Architecture diagram | ✅ `docs/architecture.html` |
+| Architecture diagram | ✅ `docs/submission/architecture.html` |
 | **Backend LIVE on Function Compute** | ✅ deployed; image on Docker Hub; healthz + Qwen incident path verified in production |
 | Operator dashboard (REST polling) | ✅ live at FC root `/`; full clip→backend→Qwen→dashboard verified |
 | `/healthz` self-reports FC identity | ✅ `platform: alibaba-function-compute` (deployment proof) |
