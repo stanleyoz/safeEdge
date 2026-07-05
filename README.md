@@ -278,6 +278,7 @@ pytest tests/test_stl_monitor.py -v                  # STL unit tests, no hardwa
 python -m tests.mock_scenarios.scenario_a_near_miss  # synthetic end-to-end
 PYTHONPATH=$(pwd) python tools/test_backend.py        # backend + live Qwen skills
 ```
+<img width="1729" height="1018" alt="image" src="https://github.com/user-attachments/assets/a621024c-395f-42df-808d-7b5ed963b31e" />
 
 ---
 
