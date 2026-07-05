@@ -2,7 +2,7 @@
 
 <!--Real-time pedestrian–vehicle safety monitoring built for the **Global AI Hackathon with Qwen Cloud** (Track 5: **EdgeAgent**).-->
 
-A Jetson Orin NX watches a scene with an Intel RealSense D455 and continuously computes *how safe* it is — not a vague confidence score, but a mathematically rigorous **robustness value (ρ)** from Signal Temporal Logic (STL), evaluated at 30 Hz on-device. A Qwen-powered **cloud brain deployed on Alibaba Cloud** adds multimodal incident reporting, adaptive safety policy, and risk forecasting — without ever sitting in the safety-critical path.
+A Jetson Orin NX watches a scene with a USB camera (Razer Kiyo X) and continuously computes *how safe* it is — not a vague confidence score, but a mathematically rigorous **robustness value (ρ)** from Signal Temporal Logic (STL), evaluated at 30 Hz on-device. A Qwen-powered **cloud brain deployed on Alibaba Cloud** adds multimodal incident reporting, adaptive safety policy, and risk forecasting — without ever sitting in the safety-critical path.
 
 > **For engineering teammates:** this README is the single reference for concept → architecture → deployment → current status. See the rendered system diagram in [`docs/submission/architecture.html`](docs/submission/architecture.html) (self-contained, opens offline).
 
@@ -19,12 +19,9 @@ A Jetson Orin NX watches a scene with an Intel RealSense D455 and continuously c
 7. [Local development](#7-local-development)
 8. [Edge (Jetson) — GPU inference](#8-edge-jetson--gpu-inference)
 9. [Cloud backend — Alibaba Cloud deployment](#9-cloud-backend--alibaba-cloud-deployment)
-10. [Current status](#10-current-status)
-11. [Engineering gotchas (read before you debug)](#11-engineering-gotchas-read-before-you-debug)
-12. [Known limitations & framework strategy](#12-known-limitations--framework-strategy)
-13. [Testing](#13-testing)
-14. [Roadmap](#14-roadmap)
-15. [Background & license](#15-background--license)
+10. [Known limitations & framework strategy](#10-known-limitations--framework-strategy)
+11. [Testing](#11-testing)
+12. [Background & license](#12-background--license)
 
 ---
 
@@ -45,8 +42,8 @@ Three tiers. The edge is real-time and offline-capable; the Alibaba-hosted backe
 
 ```
 ┌──────────────── EDGE — Jetson Orin NX (30 Hz, offline-capable) ─────────────────┐
-│  D455 (RGB+depth) → YOLOv8s (GPU) → ByteTrack → SignalExtractor (metric d_min,  │
-│  v_veh, d_pred) → STLMonitor (ρ₁–ρ₅, rtamt) → InterventionEngine                │
+│  USB cam (Razer Kiyo X) → YOLOv8s (GPU) → ByteTrack → SignalExtractor (metric   │
+│  d_min via homography, v_veh, d_pred) → STLMonitor (ρ₁–ρ₅, rtamt) → Intervention│
 │       │                                                  │                      │
 │       └─► LocalQwen (Ollama, optional)      edge/cloud_client.py (non-blocking) │
 └───────────────────────────────────────────────────────────────│─────────────────┘
@@ -111,7 +108,7 @@ Returned STL patches are applied on the edge via `STLMonitor.apply_cloud_params(
 | Component | Details |
 |---|---|
 | Edge device | NVIDIA **Jetson Orin NX 16GB**, JetPack 6.2 (R36.4.7), CUDA 12.6, TensorRT 10.3 |
-| Camera | **Intel RealSense D455** (RGB + aligned depth); USB webcam / RTSP / file also supported |
+| Camera | **USB webcam (Razer Kiyo X)** via OpenCV V4L2, metric distance from a homography ground-plane projection; RTSP / file / RealSense D455 also supported |
 | Edge detector | **YOLOv8s** on GPU (~19 fps via container; vs 3–5 fps CPU) |
 | Local AI | Qwen2.5-VL via Ollama (on-device scene note; *install pending*) |
 | Cloud compute | **Alibaba Cloud Function Compute 3.0** (serverless container) + **Tablestore** + ACR |
@@ -134,7 +131,7 @@ qwen_cloud/
 ├── edge/                       # ── runs on the Jetson ──
 │   ├── main.py                 # Orchestration loop (sync, 30 Hz)
 │   ├── cloud_client.py         # Non-blocking HTTP → cloud backend (stdlib only)
-│   ├── camera/video_source.py  # RealSenseSource · VideoSource · MockCamera
+│   ├── camera/video_source.py  # VideoSource (USB/RTSP/file) · RealSenseSource · MockCamera
 │   ├── detection/
 │   │   ├── detector.py         # YOLOv8 wrapper (device=auto → CUDA)
 │   │   ├── tracker.py          # ByteTrack via supervision
@@ -170,9 +167,9 @@ qwen_cloud/
 ├── docs/submission/architecture.html # Accessible system diagram (self-contained)
 │
 ├── tools/
-│   ├── live_record.py          # D455 + GPU YOLO + distance annotations → MP4
+│   ├── live_record.py          # USB cam/D455 + GPU YOLO + distance annotations → MP4
 │   ├── benchmark_detector.py   # Model/threshold sweep on a captured clip
-│   ├── capture_video.py        # D455/webcam recorder
+│   ├── capture_video.py        # USB cam/D455 recorder
 │   ├── calibrate_homography.py # 4-point ground calibration (webcam mode)
 │   ├── test_backend.py         # Local backend smoke test (live Qwen if key set)
 │   ├── docker_*.sh             # Jetson GPU container runners (see §8)
@@ -216,20 +213,21 @@ Point an edge instance at it with `SAFEEDGE_CLOUD_URL=http://127.0.0.1:8099`.
 sudo systemctl restart docker
 docker pull dustynv/l4t-pytorch:r36.4.0
 
-# Live D455 + GPU YOLO + distance overlays → timestamped MP4 (preview on VNC :1)
+# Live USB cam + GPU YOLO + distance overlays → timestamped MP4 (preview on VNC :1)
 bash tools/docker_live_record.sh
 
 # Offline model/threshold benchmark on a captured clip
 bash tools/docker_benchmark.sh 450
 ```
 
-Inside the container we `pip install 'numpy<2' ultralytics pyrealsense2` (see gotchas). Benchmarked result: **yolov8s @ conf 0.25 ≈ 19 fps** on the Orin GPU, chosen as the live default.
+Inside the container we `pip install 'numpy<2' ultralytics` (see gotchas; add `pyrealsense2` only if running `--source realsense`). Benchmarked result: **yolov8s @ conf 0.25 ≈ 19 fps** on the Orin GPU, chosen as the live default.
 
 To run the full pipeline against the **live** cloud backend, set on the Jetson:
 
 ```bash
 export SAFEEDGE_CLOUD_URL=https://safeedg-backend-nkmqevdhff.ap-southeast-1.fcapp.run
-python -m edge.main --source realsense --model yolov8s.pt --conf 0.25
+python -m edge.main --source webcam --model yolov8s.pt --conf 0.25
+# or: bash tools/docker_live.sh --source webcam
 ```
 
 ---
@@ -258,94 +256,9 @@ curl -s https://<fc-url>/healthz
 
 Function Compute scales to zero (pay-per-request); Tablestore reserved throughput is 0 (pay-per-use).
 
-### 9.1 Deployment proof — the `/healthz` self-report
-
-The hackathon requires proof the backend runs on Alibaba Cloud. Rather than
-rely on a console screenshot, the **`/healthz` endpoint self-reports its live
-Function Compute identity** — a single `curl` of the public URL is reproducible
-proof that anyone (including judges) can run.
-
-```bash
-curl -s https://safeedg-backend-nkmqevdhff.ap-southeast-1.fcapp.run/healthz | python3 -m json.tool
-```
-```json
-{
-  "status": "ok",
-  "platform": "alibaba-function-compute",
-  "fc": {
-    "region": "ap-southeast-1",
-    "account_id": "5093982792814095",
-    "function": "safeedge-backend",
-    "instance": "c-6a43c32f-01471659-440efcec3955"
-  },
-  "store": "TablestoreStore",
-  "models": { "reasoning": "qwen-max", "vision": "qwen-vl-max" },
-  "ts": 1782825834.83
-}
-```
-
-**Why this is proof, not just a health check** — the `fc` block is *not*
-hardcoded. Function Compute injects `FC_REGION` / `FC_ACCOUNT_ID` /
-`FC_FUNCTION_NAME` / `FC_INSTANCE_ID` into every instance; `healthz()`
-(`backend/app.py`) reads them at request time:
-
-```python
-fc = {label: os.environ[var] for label, var in {
-    "region": "FC_REGION", "account_id": "FC_ACCOUNT_ID",
-    "function": "FC_FUNCTION_NAME", "instance": "FC_INSTANCE_ID",
-}.items() if os.environ.get(var)}
-```
-
-- On Alibaba FC → those vars exist → `platform: alibaba-function-compute` with a real instance ID.
-- On a laptop → they don't → `platform: local`, `fc: {}`.
-
-So the endpoint can only report a genuine FC instance identity if it is genuinely
-executing inside Alibaba Function Compute. Combined with `store: "TablestoreStore"`
-(proving the Alibaba Tablestore connection, vs the in-memory fallback), a single
-curl evidences **both** the compute and the datastore are Alibaba services.
-
 ---
 
-## 10. Current status
-
-| Area | Status |
-|---|---|
-| STL monitor + intervention (edge) | ✅ working, unit-tested |
-| D455 RGB-D capture | ✅ live |
-| GPU YOLO on Jetson (container) | ✅ ~19 fps, benchmarked |
-| Cloud backend (FastAPI + 3 Qwen skills) | ✅ built, tested live (intl endpoint) |
-| Datastore — **real Alibaba Tablestore** | ✅ live; write→read verified, durable across restarts |
-| Edge → cloud wiring (`cloud_client.py`) | ✅ built, tested live |
-| Backend Docker image (amd64) | ✅ builds + runs against **real Tablestore + Qwen** |
-| Preflight check (`tools/check_alibaba_creds.py`) | ✅ creds + Tablestore validated |
-| Serverless Devs CLI (`s`) | ✅ installed (v3.1.10) |
-| Architecture diagram | ✅ `docs/submission/architecture.html` |
-| **Backend LIVE on Function Compute** | ✅ deployed; image on Docker Hub; healthz + Qwen incident path verified in production |
-| Operator dashboard (REST polling) | ✅ live at FC root `/`; full clip→backend→Qwen→dashboard verified |
-| `/healthz` self-reports FC identity | ✅ `platform: alibaba-function-compute` (deployment proof) |
-| Local Qwen (Ollama) on Jetson | ⏳ pending install |
-| Live full-loop demo against deployed backend | ⏳ |
-| Submission video + proof recording | ⏳ |
-
----
-
-## 11. Engineering gotchas (read before you debug)
-
-These cost real time; documented so you don't repeat them.
-
-- **Qwen endpoint is `dashscope-intl`**, not mainland `dashscope`. A hackathon key fails auth against the wrong region. Code defaults to intl; override via `DASHSCOPE_BASE_URL`.
-- **`openai==1.51` breaks on `httpx>=0.28`** (`Client.__init__() got unexpected keyword 'proxies'`). Only surfaces in a clean container. Pinned `httpx==0.27.2` in `backend/requirements.txt`.
-- **Jetson GPU requires the container.** Host pip torch is CPU-only; CUDA-13 wheels need a newer driver than JetPack 6.2's 12.6. Use `dustynv/l4t-pytorch:r36.4.0`.
-- **`numpy<2` inside the container.** torch 2.4 is compiled against NumPy 1.x; NumPy 2 breaks inference (`Numpy is not available`).
-- **`pyrealsense2` in the container needs host `libusb`** — mount `/usr/lib/aarch64-linux-gnu/libusb-1.0.so.0` (the pip wheel doesn't bundle it).
-- **cv2 preview from a container needs X11 auth** — mount `~/.Xauthority` and set `DISPLAY=:1` (VNC display), else `qt.qpa.xcb: could not connect`.
-- **D455 over OpenCV V4L2 returns garbage** (tiny/black frames). Always use `pyrealsense2` directly.
-- **`edge/main.py` cloud calls are thread-based, not asyncio.** The 30 Hz loop is synchronous — an earlier `asyncio.create_task` path was latently broken (no running loop). Cloud calls go through `cloud_client.py`'s thread pool.
-- **Cloud toggle is `SAFEEDGE_CLOUD_URL`** (presence enables cloud). The old `CLOUD_REPORTING_ENABLED` flag is gone.
-
----
-
-## 12. Known limitations & framework strategy
+## 10. Known limitations & framework strategy
 
 We are deliberately treating car-park as a **reference implementation of a reusable pipeline**, not necessarily the final product domain. Two honest limitations of the car-park use case:
 
@@ -358,7 +271,7 @@ We are deliberately treating car-park as a **reference implementation of a reusa
 
 ---
 
-## 13. Testing
+## 11. Testing
 
 ```bash
 pytest tests/test_stl_monitor.py -v                  # STL unit tests, no hardware
@@ -368,18 +281,7 @@ PYTHONPATH=$(pwd) python tools/test_backend.py        # backend + live Qwen skil
 
 ---
 
-## 14. Roadmap
-
-- [ ] Execute Alibaba deploy (ACR → FC → Tablestore) + capture proof recording
-- [ ] Reposition D455 (clear line of sight) and run full live loop against deployed backend
-- [ ] Install Ollama + local Qwen2.5-VL on the Jetson (3-tier story)
-- [ ] Refactor swap points into a single **domain profile** config + **actuation interface**
-- [ ] VLM-based intent disambiguation (reverse/brake lights)
-- [ ] 3-minute submission video + architecture diagram export
-
----
-
-## 15. Background & license
+## 12. Background & license
 
 Generalises a formal safety-monitoring framework originally developed for a semi-autonomous wheelchair (PhD research; Gazebo/ROS 2 + Jetson Orin HIL validation). The core insight — STL robustness gives a continuous, quantified safety margin rather than a binary alarm — transfers directly to fixed-infrastructure monitoring.
 

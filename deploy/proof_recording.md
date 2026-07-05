@@ -32,7 +32,7 @@ the backend runs on Alibaba Cloud (not localhost) and uses Alibaba services.
 Show the **FC console** → function `safeedge-backend`:
 - Region badge: **Singapore (ap-southeast-1)**
 - State: **Active**
-- The ARN: `acs:fc:ap-southeast-1:5093982792814095:functions/safeedge-backend`
+- The ARN: `acs:fc:ap-southeast-1:<account-id>:functions/safeedge-backend`
 - The HTTP trigger URL (the `.fcapp.run` domain)
 
 *Caption / say:* "The backend is a Function Compute service in Alibaba Cloud, Singapore region."
