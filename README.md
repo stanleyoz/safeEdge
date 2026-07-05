@@ -274,9 +274,9 @@ curl -s https://safeedg-backend-nkmqevdhff.ap-southeast-1.fcapp.run/healthz | py
   "platform": "alibaba-function-compute",
   "fc": {
     "region": "ap-southeast-1",
-    "account_id": "5093982792814095",
+    "account_id": "<account-id>",
     "function": "safeedge-backend",
-    "instance": "c-6a43c32f-01471659-440efcec3955"
+    "instance": "<instance-id>"
   },
   "store": "TablestoreStore",
   "models": { "reasoning": "qwen-max", "vision": "qwen-vl-max" },
