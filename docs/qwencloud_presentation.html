@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafeEdge — Qwen Cloud Presentation</title>
+<style>
+  :root {
+    --edge:#0b3d2e;   --edge-line:#1f9d6b;  --edge-fg:#e8fff5;
+    --ali:#16264a;    --ali-line:#3a7bd5;   --ali-fg:#eaf2ff;
+    --qwen:#34163f;   --qwen-line:#b06fe0;  --qwen-fg:#f6eaff;
+    --bg:#0e1116;     --ink:#e6edf3;        --muted:#9aa7b4;
+  }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink);
+    font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden; }
+
+  .slide {
+    display:none; width:100vw; height:100vh;
+    flex-direction:column; align-items:center; justify-content:center;
+    padding:3vh 4vw; text-align:center;
+  }
+  .slide.active { display:flex; }
+
+  .kicker { font-size:clamp(1rem,1.8vw,1.4rem); color:var(--muted);
+    letter-spacing:.08em; text-transform:uppercase; margin:0 0 .6rem; }
+  .title { font-size:clamp(2.2rem,4.2vw,3.6rem); font-weight:800; margin:0 0 1.2rem;
+    display:flex; align-items:center; gap:.5em; justify-content:center; }
+
+  /* two-column layout for the Edge+Alibaba slide */
+  .cols { display:flex; gap:3vw; width:100%; max-width:1500px; align-items:stretch; }
+  .col { flex:1; border-radius:16px; padding:2.2vh 2vw; border:3px solid; text-align:left; }
+  .col--edge { background:var(--edge); border-color:var(--edge-line); color:var(--edge-fg); }
+  .col--ali  { background:var(--ali);  border-color:var(--ali-line);  color:var(--ali-fg); }
+  .col--qwen { background:var(--qwen); border-color:var(--qwen-line); color:var(--qwen-fg); }
+
+  .col h2 { font-size:clamp(1.3rem,2.2vw,1.9rem); margin:.1rem 0 .3rem;
+    display:flex; align-items:center; gap:.4em; }
+  .col .sub { font-size:clamp(.85rem,1.3vw,1.05rem); opacity:.85; margin:0 0 1rem; }
+
+  ol.flow { list-style:none; margin:0; padding:0; }
+  ol.flow li {
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.2);
+    border-radius:10px; padding:.6vh .9vw; margin:0 0 .8vh;
+    font-size:clamp(.85rem,1.35vw,1.15rem); font-weight:600;
+  }
+  ol.flow li .role { display:block; font-weight:400; font-size:.82em; opacity:.9; margin-top:.1em; }
+  ol.flow li:not(:last-child)::after {
+    content:"↓"; display:block; text-align:center; opacity:.55; font-size:1em; margin:.2vh 0 -.1vh; }
+
+  .arrow-between { display:flex; align-items:center; justify-content:center;
+    font-size:clamp(1.8rem,3vw,2.6rem); color:var(--muted); padding:0 .5vw; }
+
+  /* single-column layout for the Qwen Cloud slide */
+  .qwen-grid { display:flex; gap:2.5vw; width:100%; max-width:1400px; justify-content:center; }
+  .model { flex:1; max-width:420px; background:var(--qwen); border:3px solid var(--qwen-line);
+    color:var(--qwen-fg); border-radius:16px; padding:3vh 1.6vw; }
+  .model .name { font-size:clamp(1.3rem,2.4vw,2rem); font-weight:800; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .model .job { font-size:clamp(.95rem,1.6vw,1.25rem); margin-top:1vh; opacity:.92; }
+
+  .footline { margin-top:2.4vh; font-size:clamp(.9rem,1.4vw,1.15rem); color:var(--muted); }
+  .footline code { background:rgba(255,255,255,.08); padding:.1em .5em; border-radius:6px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+
+  /* slide 3 — video transition marker */
+  .video-marker { gap:1.4vh; }
+  .video-icon { font-size:clamp(3.5rem,7vw,6rem); }
+  .video-marker .title { color:var(--ink); }
+  .cut-note { font-size:clamp(1rem,1.7vw,1.3rem); color:var(--muted);
+    border:2px dashed var(--muted); border-radius:12px; padding:1.6vh 2vw; max-width:700px; }
+  .cut-note strong { color:var(--ink); }
+
+  /* slide 4 — closing recap */
+  .recap-flow { display:flex; align-items:center; justify-content:center; gap:1.2vw;
+    width:100%; max-width:1200px; flex-wrap:wrap; }
+  .recap-node { border-radius:14px; border:3px solid; padding:1.6vh 1.4vw; text-align:left; min-width:230px; }
+  .recap-node--edge { background:var(--edge); border-color:var(--edge-line); color:var(--edge-fg); }
+  .recap-node--ali  { background:var(--ali);  border-color:var(--ali-line);  color:var(--ali-fg); }
+  .recap-node--qwen { background:var(--qwen); border-color:var(--qwen-line); color:var(--qwen-fg); }
+  .recap-node h3 { margin:0 0 .5vh; font-size:clamp(1.05rem,1.8vw,1.4rem); }
+  .recap-node p { margin:0; font-size:clamp(.8rem,1.25vw,1.05rem); opacity:.9; }
+  .recap-node ul { margin:.4vh 0 0; padding-left:1.1em; font-size:clamp(.78rem,1.2vw,1rem); opacity:.92; }
+  .recap-arrow { font-size:clamp(1.6rem,2.6vw,2.2rem); color:var(--muted); }
+
+  .nav-hint { position:fixed; bottom:1.2vh; right:1.4vw; font-size:.8rem; color:var(--muted); opacity:.6; }
+  .dots { position:fixed; bottom:1.2vh; left:1.4vw; display:flex; gap:.4em; }
+  .dot { width:.5em; height:.5em; border-radius:50%; background:var(--muted); opacity:.4; }
+  .dot.on { opacity:1; background:var(--ink); }
+</style>
+</head>
+<body>
+
+<!-- SLIDE 1 — Edge + Alibaba Cloud, handed off non-blocking -->
+<section class="slide active" id="s1">
+  <p class="kicker">Page 1</p>
+  <h1 class="title">🛰️ Edge&nbsp;→&nbsp;☁️ Alibaba Cloud</h1>
+  <div class="cols">
+    <div class="col col--edge">
+      <h2>🛰️ Jetson Orin NX 16GB</h2>
+      <p class="sub">Real-time, offline-capable · 30 Hz safety loop</p>
+      <ol class="flow">
+        <li>USB camera + homography<span class="role">ground-plane projection, unlimited range</span></li>
+        <li>YOLOv8s — GPU<span class="role">person &amp; vehicle detection</span></li>
+        <li>ByteTrack<span class="role">multi-object tracking</span></li>
+        <li>STL Monitor (rtamt)<span class="role">robustness ρ₁–ρ₅</span></li>
+        <li>Intervention Engine<span class="role">SAFE·WARNING·EMERGENCY</span></li>
+      </ol>
+    </div>
+    <div class="arrow-between">→</div>
+    <div class="col col--ali">
+      <h2>☁️ Function Compute 3.0</h2>
+      <p class="sub">Serverless, scale-to-zero · the deployed backend</p>
+      <ol class="flow">
+        <li>FastAPI backend<span class="role">REST ingest + dashboard</span></li>
+        <li>3 Qwen skills<span class="role">policy · incident · forecast</span></li>
+        <li>Tablestore<span class="role">events · incidents · ρ-history</span></li>
+      </ol>
+    </div>
+  </div>
+  <p class="footline">No LLM sits in the safety-critical path — <code>cloud_client.py</code> is fire-and-forget, hard-timeout, non-blocking.</p>
+</section>
+
+<!-- SLIDE 2 — Qwen Cloud, three models three jobs -->
+<section class="slide" id="s2">
+  <p class="kicker">Page 2</p>
+  <h1 class="title">🧠 Qwen Cloud — DashScope (intl)</h1>
+  <div class="qwen-grid">
+    <div class="model">
+      <div class="name">qwen-vl-max</div>
+      <div class="job">Multimodal Incident Reporter — writes a real report from the actual danger frame</div>
+    </div>
+    <div class="model">
+      <div class="name">qwen-max</div>
+      <div class="job">Policy Manager — live STL parameter patches, tuned from event history</div>
+    </div>
+    <div class="model">
+      <div class="name">qwen-max</div>
+      <div class="job">Risk Forecaster — predicts high-risk time windows</div>
+    </div>
+  </div>
+  <p class="footline">Called from the Alibaba Cloud backend via <code>cloud/qwen_client.py</code> — never from the Jetson directly.</p>
+</section>
+
+<!-- SLIDE 3 — video transition marker (cut away here during recording/editing) -->
+<section class="slide video-marker" id="s3">
+  <p class="kicker">Page 3 — cut away here</p>
+  <div class="video-icon">🎬</div>
+  <h1 class="title">Live Demo Walkthrough</h1>
+  <p class="cut-note"><strong>Switch to the demo clip now.</strong> Play the SAFE → WARNING → EMERGENCY → WARNING
+    walkthrough (see <code>docs/VIDEO_SCRIPT.md</code>, 1:05–1:50) as a separate screen recording or splice it in
+    during edit — this slide is a placeholder, not the video itself.</p>
+</section>
+
+<!-- SLIDE 4 — closing recap: how Qwen + Alibaba power SafeEdge -->
+<section class="slide" id="s4">
+  <p class="kicker">Page 4 — back to architecture</p>
+  <h1 class="title">🧠 How Qwen + Alibaba Cloud Power SafeEdge</h1>
+  <div class="recap-flow">
+    <div class="recap-node recap-node--edge">
+      <h3>🛰️ Edge (Jetson)</h3>
+      <p>30 Hz STL safety loop, offline-capable</p>
+    </div>
+    <div class="recap-arrow">→</div>
+    <div class="recap-node recap-node--ali">
+      <h3>☁️ Alibaba Cloud</h3>
+      <p>Function Compute 3.0 + Tablestore</p>
+      <ul>
+        <li>Events · incidents · ρ-history</li>
+      </ul>
+    </div>
+    <div class="recap-arrow">→</div>
+    <div class="recap-node recap-node--qwen">
+      <h3>🧠 3 Qwen skills</h3>
+      <ul>
+        <li>qwen-vl-max — incident report</li>
+        <li>qwen-max — policy tuning</li>
+        <li>qwen-max — risk forecast</li>
+      </ul>
+    </div>
+  </div>
+  <p class="footline">Non-blocking hand-off, real Tablestore, real Qwen output — never simulated.</p>
+</section>
+
+<div class="dots">
+  <span class="dot on" data-i="0"></span><span class="dot" data-i="1"></span>
+  <span class="dot" data-i="2"></span><span class="dot" data-i="3"></span>
+</div>
+<div class="nav-hint">← → to navigate · Esc for slide 1</div>
+
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  const dots = [...document.querySelectorAll('.dot')];
+  let i = 0;
+  function show(n){
+    i = (n + slides.length) % slides.length;
+    slides.forEach((s,idx)=>s.classList.toggle('active', idx===i));
+    dots.forEach((d,idx)=>d.classList.toggle('on', idx===i));
+  }
+  document.addEventListener('keydown', e=>{
+    if(e.key==='ArrowRight') show(i+1);
+    else if(e.key==='ArrowLeft') show(i-1);
+    else if(e.key==='Escape') show(0);
+  });
+</script>
+
+</body>
+</html>
