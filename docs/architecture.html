@@ -121,8 +121,8 @@
       <h3 id="t-edge">🛰️ Edge — Jetson Orin NX 16GB</h3>
       <p class="sub">Real-time, offline-capable safety loop @ 30&nbsp;Hz</p>
       <ol class="flow" aria-label="Edge processing pipeline, top to bottom">
-        <li><span class="comp">Intel RealSense D455
-            <span class="role">RGB + aligned depth</span>
+        <li><span class="comp">USB camera + homography
+            <span class="role">ground-plane projection, unlimited range</span>
             <span class="file">camera/video_source.py</span></span></li>
         <li><span class="comp">YOLOv8s — GPU / TensorRT
             <span class="role">person &amp; vehicle detection</span>
@@ -209,7 +209,7 @@
 
   <h2>2. Safety event → Qwen incident report</h2>
   <ol class="flow stepped" aria-label="Incident reporting sequence">
-    <li>D455 streams an RGB-D frame; the edge pipeline detects, tracks, and extracts metric signals.</li>
+    <li>The USB camera streams a frame; homography projects detections to ground-plane metres, and the edge pipeline detects, tracks, and extracts metric signals.</li>
     <li>STL Monitor computes robustness ρ for the spec “keep pedestrians safe from moving vehicles”.</li>
     <li>When <strong>ρ &lt; 0</strong> (specification violated), the Intervention Engine raises a WARNING/EMERGENCY event.</li>
     <li>Cloud Client sends <code>POST /api/events</code> with the event + JPEG frame — <em>non-blocking</em>.</li>
@@ -247,7 +247,7 @@
     <li><strong>Edge:</strong> Jetson Orin NX 16GB · JetPack 6.2</li>
     <li>YOLOv8s (Ultralytics, GPU) · ByteTrack (supervision)</li>
     <li><code>rtamt</code> Signal Temporal Logic engine</li>
-    <li>Intel RealSense D455 (RGB-D) · Ollama (local Qwen2.5-VL)</li>
+    <li>USB camera + homography (ground-plane projection) · Ollama (local Qwen2.5-VL)</li>
     <li><strong>Cloud:</strong> Alibaba Function Compute 3.0 · Tablestore · ACR</li>
     <li>FastAPI · Uvicorn · WebSocket</li>
     <li><strong>AI:</strong> Qwen Cloud / DashScope (intl)</li>

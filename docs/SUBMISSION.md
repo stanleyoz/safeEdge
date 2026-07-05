@@ -83,6 +83,13 @@ Rather than curate a clip that always works, we deliberately stress-tested the t
 3. **Final rule (recall-first):** EMERGENCY fires on proximity **and** (closing motion **or** the vehicle's own speed alone) — deliberately biased toward false alarms over missed danger, per the explicit safety principle that *a missed emergency is worse than a false one*. We proved this fix correct with exact per-frame signal logging on the transition that had failed, not just re-running and eyeballing the result.
 4. **Root cause, not just a threshold:** the underlying noise is bounding-box redraw jitter feeding a homography that amplifies pixel wobble into phantom velocity at range. We added position smoothing at the signal-extraction layer (helps, doesn't fully solve it) and benchmarked three additional detector options — YOLO11m, YOLO11x, RT-DETR-L — against the same ground truth. None cleanly solved it either; the real fix is geometric (below).
 
+## Privacy & data handling
+
+- **No continuous video ever leaves the edge device.** The Jetson only posts a frame on WARNING+ events, plus a throttled (0.5s), resized (640px) live-state frame for the operator dashboard — not a continuous stream to any third party.
+- **Processed via Alibaba Cloud International, not mainland.** `dashscope-intl.aliyuncs.com` is a genuinely separate deployment: Singapore-region data storage and endpoints, inference compute dynamically scheduled globally *excluding Chinese Mainland*, and **Alibaba Cloud International is a distinct legal entity** from Alibaba Cloud China. This is a real jurisdictional and data-residency boundary, not just a different URL.
+- **Our own datastore, not a third-party consumer service.** Events, incidents, and frames persist in a Tablestore instance we control, under our own Alibaba Cloud account — never a third-party SaaS.
+- **Compliance posture:** Alibaba Cloud International separately maintains a GDPR Addendum (EU Standard Contractual Clauses) and is a founding member of the EU Cloud Code of Conduct — relevant compliance tooling for any operator deploying this in a jurisdiction with data-protection requirements.
+
 ## Known limitation & roadmap
 
 **Single monocular camera, cars moving mostly along the camera's own axis, badly under-measures radial (toward/away) velocity** — this is a scene-geometry limit, not a software bug, and no amount of filter tuning removes it cleanly. The honest fix:

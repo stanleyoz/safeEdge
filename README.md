@@ -2,7 +2,7 @@
 
 <!--Real-time pedestrian–vehicle safety monitoring built for the **Global AI Hackathon with Qwen Cloud** (Track 5: **EdgeAgent**).-->
 
-A Jetson Orin NX watches a scene with an Intel RealSense D455 and continuously computes *how safe* it is — not a vague confidence score, but a mathematically rigorous **robustness value (ρ)** from Signal Temporal Logic (STL), evaluated at 30 Hz on-device. A Qwen-powered **cloud brain deployed on Alibaba Cloud** adds multimodal incident reporting, adaptive safety policy, and risk forecasting — without ever sitting in the safety-critical path.
+A Jetson Orin NX watches a scene with a USB camera (homography-projected to ground-plane metres) and continuously computes *how safe* it is — not a vague confidence score, but a mathematically rigorous **robustness value (ρ)** from Signal Temporal Logic (STL), evaluated at 30 Hz on-device. A Qwen-powered **cloud brain deployed on Alibaba Cloud** adds multimodal incident reporting, adaptive safety policy, and risk forecasting — without ever sitting in the safety-critical path.
 
 > **For engineering teammates:** this README is the single reference for concept → architecture → deployment → current status. See the rendered system diagram in [`docs/architecture.html`](docs/architecture.html) (self-contained, opens offline).
 
@@ -45,7 +45,7 @@ Three tiers. The edge is real-time and offline-capable; the Alibaba-hosted backe
 
 ```
 ┌──────────────── EDGE — Jetson Orin NX (30 Hz, offline-capable) ─────────────────┐
-│  D455 (RGB+depth) → YOLOv8s (GPU) → ByteTrack → SignalExtractor (metric d_min,  │
+│  USB camera → homography → YOLOv8s (GPU) → ByteTrack → SignalExtractor (d_min, │
 │  v_veh, d_pred) → STLMonitor (ρ₁–ρ₅, rtamt) → InterventionEngine                │
 │       │                                                  │                      │
 │       └─► LocalQwen (Ollama, optional)      edge/cloud_client.py (non-blocking) │
@@ -111,7 +111,7 @@ Returned STL patches are applied on the edge via `STLMonitor.apply_cloud_params(
 | Component | Details |
 |---|---|
 | Edge device | NVIDIA **Jetson Orin NX 16GB**, JetPack 6.2 (R36.4.7), CUDA 12.6, TensorRT 10.3 |
-| Camera | **Intel RealSense D455** (RGB + aligned depth); USB webcam / RTSP / file also supported |
+| Camera | **USB webcam** (homography ground-plane projection, unlimited range); RTSP / file also supported. *Pivoted from Intel RealSense D455* — depth range (~15m) was insufficient for car-park object distances (20–57m), and the webcam is far cheaper. D455 hardware remains connected/available but unused for this deployment. |
 | Edge detector | **YOLOv8s** on GPU (~19 fps via container; vs 3–5 fps CPU) |
 | Local AI | Qwen2.5-VL via Ollama (on-device scene note; *install pending*) |
 | Cloud compute | **Alibaba Cloud Function Compute 3.0** (serverless container) + **Tablestore** + ACR |
@@ -311,7 +311,7 @@ curl evidences **both** the compute and the datastore are Alibaba services.
 | Area | Status |
 |---|---|
 | STL monitor + intervention (edge) | ✅ working, unit-tested |
-| D455 RGB-D capture | ✅ live |
+| USB camera + homography capture | ✅ live (pivoted from D455 — range/cost) |
 | GPU YOLO on Jetson (container) | ✅ ~19 fps, benchmarked |
 | Cloud backend (FastAPI + 3 Qwen skills) | ✅ built, tested live (intl endpoint) |
 | Datastore — **real Alibaba Tablestore** | ✅ live; write→read verified, durable across restarts |
