@@ -27,8 +27,8 @@ Checks: dashboard 200 · backend healthy · state fresh (<10 s) · frame actuall
 
 ### 0.3 Camera pose + geometry (THE thing that silently ruins takes)
 The homography and AOI are **camera-specific**. If the camera/tripod moved even a little since last calibration, redo them:
-- **Homography:** open `…/safeEdge/homography-editor.html`, click ≥4 ground points with known metric spacing (parking bay ≈ 2.5 m × 5 m), paste correspondences back → I drop them into `config/homography.npy` and restart.
-- **AOI:** open `…/safeEdge/aoi-editor.html`, trace the **lane where the car will drive + where the pedestrian will stand**. Paste back → into `config/camera_config.yaml`.
+- **Homography:** open `…/safeEdge/tools/homography-editor.html`, click ≥4 ground points with known metric spacing (parking bay ≈ 2.5 m × 5 m), paste correspondences back → I drop them into `config/homography.npy` and restart.
+- **AOI:** open `…/safeEdge/tools/aoi-editor.html`, trace the **lane where the car will drive + where the pedestrian will stand**. Paste back → into `config/camera_config.yaml`.
 - **Frame the danger lane ACROSS the camera** (car drives left↔right, *not* toward/away). Monocular velocity underestimates radial motion — a car driving straight at the camera may not exceed the 0.8 m/s motion gate. Sideways motion reads true speed. This is the single most important framing decision.
 
 ### 0.4 Solo dry-run (be your own test pedestrian)
