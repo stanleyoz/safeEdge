@@ -157,8 +157,13 @@ function renderIncidents(list){
 function renderEvents(list){
   const el=document.getElementById("events");
   if(!list||!list.length){ el.innerHTML='<div style="color:#3d4148;font-size:.7rem">No events yet.</div>'; return; }
-  el.innerHTML = list.slice().reverse().slice(0,40).map(e=>`<div class="ev level-${e.level}">
-    <span class="t">${fmt(e.timestamp)}</span><span>${(e.message||"").replace(/</g,"&lt;")}</span></div>`).join("");
+  el.innerHTML = list.slice().reverse().slice(0,40).map(e=>{
+    const frameLink = (e.has_frame && e.id)
+      ? ` <a href="${API}/api/events/${e.id}/frame" target="_blank" rel="noopener" style="color:#58a6ff;text-decoration:none;">📷</a>`
+      : "";
+    return `<div class="ev level-${e.level}">
+    <span class="t">${fmt(e.timestamp)}</span><span>${(e.message||"").replace(/</g,"&lt;")}</span>${frameLink}</div>`;
+  }).join("");
 }
 
 function renderForecast(f){

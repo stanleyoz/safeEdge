@@ -29,6 +29,8 @@ class Store(Protocol):
     def get_forecast(self) -> Optional[dict]: ...
     def set_latest_state(self, state: dict) -> None: ...
     def get_latest_state(self) -> Optional[dict]: ...
+    def set_kv(self, key: str, value: dict) -> None: ...
+    def get_kv(self, key: str) -> Optional[dict]: ...
 
 
 # ── In-memory (local dev) ─────────────────────────────────────────────────────
@@ -40,6 +42,7 @@ class InMemoryStore:
         self._rho: list[dict] = []
         self._forecast: Optional[dict] = None
         self._latest_state: Optional[dict] = None
+        self._kv: dict = {}
         self._cap = cap
         logger.info("Store: in-memory (local dev mode)")
 
@@ -76,6 +79,12 @@ class InMemoryStore:
 
     def get_latest_state(self) -> Optional[dict]:
         return self._latest_state
+
+    def set_kv(self, key: str, value: dict) -> None:
+        self._kv[key] = value
+
+    def get_kv(self, key: str) -> Optional[dict]:
+        return self._kv.get(key)
 
 
 # ── Tablestore (Alibaba Cloud, prod) ──────────────────────────────────────────
@@ -200,6 +209,12 @@ class TablestoreStore:
 
     def get_latest_state(self) -> Optional[dict]:
         return self._kv_get("latest_state")
+
+    def set_kv(self, key: str, value: dict) -> None:
+        self._kv_set(key, value)
+
+    def get_kv(self, key: str) -> Optional[dict]:
+        return self._kv_get(key)
 
 
 # ── factory ───────────────────────────────────────────────────────────────────

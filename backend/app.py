@@ -14,6 +14,7 @@ Endpoints
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -23,7 +24,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
@@ -138,7 +139,17 @@ async def get_latest_state():
 @app.post("/api/events")
 async def post_event(event: EventPush):
     ev = event.model_dump()
-    eid = _store.add_event({k: v for k, v in ev.items() if k != "frame_jpeg_b64"})
+    frame_b64 = ev.get("frame_jpeg_b64")
+    # Keep the raw frame OUT of the event row itself — /api/events?limit=60 is
+    # polled every ~1.5s by the dashboard, and 60 rows of embedded JPEGs would
+    # bloat that response badly. Store it separately, keyed by event id, and
+    # serve it on demand via /api/events/{id}/frame. (ev itself is left intact
+    # with frame_jpeg_b64 present, since _generate_incident below still needs
+    # it for the Qwen-VL vision call.)
+    eid = _store.add_event({**{k: v for k, v in ev.items() if k != "frame_jpeg_b64"},
+                            "has_frame": bool(frame_b64)})
+    if frame_b64:
+        _store.set_kv(f"frame:{eid}", {"jpeg_b64": frame_b64})
 
     # Vision/text incident report for WARNING+ events (Qwen-VL on Alibaba).
     # Generated INLINE, not as a background task: Function Compute freezes the
@@ -148,6 +159,14 @@ async def post_event(event: EventPush):
     if event.level >= INCIDENT_MIN_LEVEL:
         incident_id = await _generate_incident(ev)
     return {"ok": True, "event_id": eid, "incident_id": incident_id}
+
+
+@app.get("/api/events/{event_id}/frame")
+async def get_event_frame(event_id: str):
+    rec = _store.get_kv(f"frame:{event_id}")
+    if not rec or not rec.get("jpeg_b64"):
+        return JSONResponse({"error": "frame not found"}, status_code=404)
+    return Response(content=base64.b64decode(rec["jpeg_b64"]), media_type="image/jpeg")
 
 
 async def _generate_incident(event: dict) -> Optional[str]:
