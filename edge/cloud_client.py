@@ -64,7 +64,7 @@ class CloudClient:
             return
         self._last_state_push = now
         if frame_bgr is not None and (detections or aoi_poly is not None):
-            frame_bgr = _draw_boxes(frame_bgr, detections or [], aoi_poly)
+            frame_bgr = draw_boxes(frame_bgr, detections or [], aoi_poly)
         payload = _state_payload(state, frame_bgr)
         self._state_future = self._pool.submit(self._post, "/api/state", payload)
 
@@ -132,7 +132,7 @@ class CloudClient:
 
 # ── payload builders (match backend/models.py) ────────────────────────────────
 
-def _draw_boxes(frame_bgr: np.ndarray, detections, aoi_poly=None) -> np.ndarray:
+def draw_boxes(frame_bgr: np.ndarray, detections, aoi_poly=None) -> np.ndarray:
     """Thin yellow boxes + track labels + AOI outline — a lightweight 'live' cue."""
     img = frame_bgr.copy()
     YELLOW = (0, 255, 255)

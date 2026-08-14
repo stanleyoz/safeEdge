@@ -31,6 +31,7 @@ from edge.safety.stl_monitor import STLMonitor, SignalFrame
 from edge.safety.trajectory import predict_min_distance
 from edge.safety.intervention import InterventionEngine, InterventionEvent
 from edge.local_ai.qwen_local import LocalQwenInterpreter
+from edge.cloud_client import draw_boxes
 
 ROOT = Path(__file__).parent.parent
 # Config paths are env-overridable so offline tuning can point at temp variants
@@ -368,7 +369,16 @@ class SafeEdge:
                     self._running = False
 
             if self._ws_publish:
-                self._ws_publish(state, frame.color_bgr, event)
+                # Thin yellow boxes + track labels + AOI outline — a lightweight
+                # "live" cue on the dashboard feed (local WS, and anything
+                # tunnelled from it, e.g. the GitHub Pages viewer via Funnel).
+                ann_frame = frame.color_bgr
+                if tracked or self._aoi:
+                    ann_frame = draw_boxes(
+                        frame.color_bgr, tracked,
+                        aoi_poly=(self._aoi.poly if self._aoi else None),
+                    )
+                self._ws_publish(state, ann_frame, event)
 
             if self._cloud is not None:
                 # Throttled live-state push for the cloud dashboard (non-blocking).
