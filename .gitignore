@@ -31,3 +31,12 @@ data/captures/          # raw-feed recordings + their .meta.json sidecars
 
 # macOS
 .DS_Store
+
+# LaTeX build output (research papers)
+research/**/paper/*.aux
+research/**/paper/*.bbl
+research/**/paper/*.blg
+research/**/paper/*.log
+research/**/paper/*.out
+research/**/paper/main.pdf
+research/**/paper/arxiv.tar.gz

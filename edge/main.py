@@ -121,7 +121,8 @@ class SafeEdge:
     def __init__(self, source: str = "mock", file_path: str | None = None,
                  model: str = "yolov8n.pt", conf: float = 0.4,
                  record: bool | None = None, capture_dir: str | None = None,
-                 fps_override: float | None = None, realtime: bool = False):
+                 fps_override: float | None = None, realtime: bool = False,
+                 trace_path: str | None = None):
         self._running = False
         self._offline = (source == "file")   # replay a saved clip: stop at EOF
         # pace to real time when live, or when replaying for a dashboard recording
@@ -280,6 +281,13 @@ class SafeEdge:
         self._event_log: list[dict] = []
         self._last_policy_update = 0.0
         self._frame_t = 0
+
+        # Per-frame signal/ρ trace (JSONL) for offline analysis — e.g. aligning
+        # V-JEPA surprise against ρ1 in tools/vjepa_surprise.py. Off unless asked.
+        trace_path = trace_path or os.environ.get("SAFEEDGE_TRACE") or None
+        self._trace = open(trace_path, "w") if trace_path else None
+        if self._trace:
+            logger.info("Per-frame trace → %s", trace_path)
         self._last_frame_bgr: np.ndarray | None = None
         self._last_interp: str = ""
         self._fps_measured: float = 0.0
@@ -356,6 +364,8 @@ class SafeEdge:
             )
             state = self._stl.update(sig_frame)
             event = self._engine.process(state)
+            if self._trace:
+                self._write_trace(bundle, d_pred, state)
 
             if event is not None:
                 self._last_interp = self._local_ai.interpret(state)
@@ -404,11 +414,27 @@ class SafeEdge:
 
         self._camera.stop()
         self._recorder.close()
+        if self._trace:
+            self._trace.close()
         if self._cloud is not None:
             self._cloud.close()
         if self._preview:
             cv2.destroyAllWindows()
         logger.info("SafeEdge stopped")
+
+    def _write_trace(self, bundle, d_pred: float, state) -> None:
+        def f(v):   # numpy scalars (e.g. float32) are not JSON-serialisable
+            return None if v is None else float(v)
+
+        rec = {
+            "frame": self._frame_t, "t_s": self._frame_t / self._fps,
+            "d_min": f(bundle.d_min), "v_veh_max": f(bundle.v_veh_max),
+            "v_closing": f(bundle.v_closing), "d_pred": f(d_pred),
+            "rho1": f(state.rho1), "rho2": f(state.rho2), "rho3": f(state.rho3),
+            "rho4": f(state.rho4), "rho5": f(state.rho5), "rho_min": f(state.rho_min),
+            "level": int(state.intervention_level),
+        }
+        self._trace.write(json.dumps(rec) + "\n")
 
     # ── Preview window ───────────────────────────────────────────────────────
 
@@ -561,10 +587,13 @@ if __name__ == "__main__":
     parser.add_argument("--realtime", action="store_true",
                         help="pace a file replay to real time (for dashboard recording); "
                              "default file replay runs flat-out for fast tuning")
+    parser.add_argument("--trace", default=None,
+                        help="write a per-frame JSONL trace of signals, ρ1–ρ5 and level "
+                             "(input for tools/vjepa_surprise.py)")
     args = parser.parse_args()
     source = "mock" if args.mock else args.source
     SafeEdge(source=source, file_path=args.file_path,
              model=args.model, conf=args.conf,
              record=(False if args.no_record else None),
              capture_dir=args.capture_dir, fps_override=args.fps,
-             realtime=args.realtime).run()
+             realtime=args.realtime, trace_path=args.trace).run()
