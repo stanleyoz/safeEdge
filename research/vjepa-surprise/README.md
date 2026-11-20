@@ -27,6 +27,7 @@ established.
 | `results/<run>/` | `summary.json`, `surprise.csv` (per window), `maps.npy` (24×24 surprise maps), `plot.png` |
 | `results/traces/` | Geometric trace of the evaluated clip |
 | `results/table.md`, `table.json` | The tables below (frame-level and region-pooled), as generated |
+| `session/` | Staged near-miss session: `STAGED_SESSION_PLAN.md`, randomised `run_sheet.csv`, its generator |
 | `paper/` | LaTeX draft (`main.tex`, `references.bib`, `figures/`). `make` builds `main.pdf` in the `texlive/texlive` Docker image; `make arxiv` packages the upload |
 
 ## Results
