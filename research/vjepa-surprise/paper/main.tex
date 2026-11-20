@@ -41,8 +41,10 @@ model's own predictor anticipates geometric warnings 2\,s ahead with AUROC
 frame-difference baseline is at chance (0.48). Same-time detection is no
 better than frame differencing, and frame-level pooling is dominated by
 near-field motion; dense surprise maps nevertheless localise distant
-pedestrians, motivating pair-local pooling. \todo{update once the staged
-near-miss set and pair-local pooling are in.}
+pedestrians. Pooling over tracked objects removes the anticipation signal,
+because on this camera every detected pedestrian already triggers a warning:
+the world model's value appears to lie in pedestrians the detector cannot yet
+see. \todo{update once the staged near-miss set is in.}
 \end{abstract}
 
 \section{Introduction}
@@ -208,14 +210,29 @@ AUROC unchanged (0.70) while lifting the motion baselines only slightly, which
 suggests the signal is not merely gross motion. \todo{figure: heat-map frames;
 needs consent/anonymisation for publication.}
 
+\paragraph{Object-local pooling.} Pooling the map over the image regions of
+pedestrian--vehicle pairs within 5\,m gives anticipation AUROC 0.50 for every
+scorer, and pooling over pedestrians and moving vehicles about 0.49; both reach
+the same concurrent AUROC (0.89--0.93) as frame differencing pooled the same
+way, because the score reduces to the presence of the object. On this camera
+no calm window contains a detected pedestrian: the monitored strip is lined
+with parked cars, so any pedestrian in it triggers WARNING at once, and
+detection runs on the zone crop. Anticipating WARNING therefore means
+anticipating a pedestrian before detection. In the highest-scoring pre-warning
+windows the ViT-g map marks a person entering at the crop edge and the gap
+beside a parked vehicle just before a pedestrian steps out---cases the detector
+cannot yet see. We state this as a hypothesis for the staged experiments.
+
 \section{Discussion and limitations}
 
 \begin{itemize}
   \item \textbf{Scale of evidence.} Eight episodes from one clip and one camera.
         The anticipation effect needs confirmation on more events.
-  \item \textbf{Pooling.} Frame-level pooling is dominated by near-field motion.
-        Pooling around tracked pedestrian--vehicle pairs is the natural fix and
-        uses geometry to aim the world model. \todo{results.}
+  \item \textbf{Pooling.} Frame-level pooling is dominated by near-field motion,
+        but pooling around tracked objects cannot anticipate either: it ties the
+        score to detection, which is the geometric signal. Anticipation has to
+        come from what the detector does not yet see, so the useful pooling is
+        likely over occlusion boundaries and zone edges. \todo{test on staged runs.}
   \item \textbf{Exchangeability.} The conformal guarantee assumes calm footage
         resembles calibration footage; lighting and season shift break this.
   \item \textbf{Compute.} ViT-g costs 268\,ms per window on a desktop GPU; the

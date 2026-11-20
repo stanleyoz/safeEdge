@@ -345,6 +345,7 @@ class SafeEdge:
                 raw_dets = self._detector.detect(frame.color_bgr)
 
             tracked  = self._tracker.update(raw_dets, frame.color_bgr.shape[:2])
+            tracked_all = tracked     # pre-AOI-filter, for the trace only
 
             # (A) polygon filter: keep only tracks whose foot-point is in the AOI
             if self._aoi:
@@ -365,7 +366,7 @@ class SafeEdge:
             state = self._stl.update(sig_frame)
             event = self._engine.process(state)
             if self._trace:
-                self._write_trace(bundle, d_pred, state)
+                self._write_trace(bundle, d_pred, state, tracked_all)
 
             if event is not None:
                 self._last_interp = self._local_ai.interpret(state)
@@ -422,9 +423,26 @@ class SafeEdge:
             cv2.destroyAllWindows()
         logger.info("SafeEdge stopped")
 
-    def _write_trace(self, bundle, d_pred: float, state) -> None:
+    def _write_trace(self, bundle, d_pred: float, state, tracked) -> None:
         def f(v):   # numpy scalars (e.g. float32) are not JSON-serialisable
             return None if v is None else float(v)
+
+        # Per-object image box + ground-plane position/speed, joined on track
+        # id, so offline tools can look at the image region of each hazard
+        # (e.g. pair-local surprise pooling in tools/vjepa_surprise.py).
+        # Includes tracks the AOI polygon filter dropped (in_aoi false): they
+        # never reach the STL signals, but say who is about to enter the zone.
+        ground = {o.track_id: o for o in (*bundle.pedestrians, *bundle.vehicles)}
+        objects = []
+        for det in tracked:
+            g = ground.get(det.track_id)
+            objects.append({
+                "id": int(det.track_id), "label": det.label,
+                "in_aoi": bool(self._aoi is None or self._aoi.contains_foot(det.bbox_xyxy)),
+                "box": [round(float(v), 1) for v in det.bbox_xyxy],
+                "xz": None if g is None else [round(float(g.xyz[0]), 3), round(float(g.xyz[2]), 3)],
+                "speed": None if g is None else round(float(np.linalg.norm(g.vel)), 3),
+            })
 
         rec = {
             "frame": self._frame_t, "t_s": self._frame_t / self._fps,
@@ -433,6 +451,7 @@ class SafeEdge:
             "rho1": f(state.rho1), "rho2": f(state.rho2), "rho3": f(state.rho3),
             "rho4": f(state.rho4), "rho5": f(state.rho5), "rho_min": f(state.rho_min),
             "level": int(state.intervention_level),
+            "objects": objects,
         }
         self._trace.write(json.dumps(rec) + "\n")
 

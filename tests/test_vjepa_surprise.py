@@ -12,8 +12,9 @@ import numpy as np
 import pytest
 
 from tools.vjepa_surprise import (
-    aoi_crop_box, aoi_patch_mask, auroc, conformal_threshold, episodes,
-    exceedance_runs, false_alarms, lead_time, onsets, plan_windows, token_indices,
+    aoi_crop_box, aoi_patch_mask, auroc, boxes_to_patch_mask, conformal_threshold,
+    episodes, exceedance_runs, false_alarms, lead_time, onsets, plan_windows,
+    region_score, select_region_objects, token_indices, window_region_scores,
 )
 
 
@@ -124,3 +125,44 @@ def test_plan_windows():
     ends = plan_windows(10.0, 4.0, 16, 0.5)
     assert ends[0] == pytest.approx(3.75) and ends[-1] == pytest.approx(9.75)
     assert len(ends) == 13
+
+
+class TestRegions:
+    ped = {"id": 1, "label": "person", "box": [100, 100, 120, 160], "xz": [0.0, 5.0], "speed": 1.2}
+    car_near = {"id": 2, "label": "car", "box": [200, 120, 320, 180], "xz": [3.0, 5.0], "speed": 0.0}
+    car_far = {"id": 3, "label": "car", "box": [500, 120, 620, 180], "xz": [20.0, 5.0], "speed": 2.0}
+    car_unplaced = {"id": 4, "label": "truck", "box": [0, 0, 10, 10], "xz": None, "speed": None}
+
+    def ids(self, objs):
+        return sorted(o["id"] for o in objs)
+
+    def test_pair_keeps_only_close_pairs(self):
+        objs = [self.ped, self.car_near, self.car_far, self.car_unplaced]
+        assert self.ids(select_region_objects(objs, "pair", pair_radius_m=5.0)) == [1, 2]
+        assert select_region_objects([self.car_near, self.car_far], "pair") == []
+
+    def test_actors_are_people_and_moving_vehicles(self):
+        objs = [self.ped, self.car_near, self.car_far, self.car_unplaced]
+        assert self.ids(select_region_objects(objs, "actors", moving_mps=0.5)) == [1, 3]
+
+    def test_box_maps_into_cropped_grid(self):
+        # crop 0..640 x 0..640 → 32 px per patch on a 20 grid; box 64..128 px → cols 2..3
+        m = boxes_to_patch_mask([[64, 64, 128, 128]], (0, 0, 640, 640), grid=20, pad=0.0)
+        assert m.sum() == 4 and m[2:4, 2:4].all()
+
+    def test_box_outside_crop_is_ignored(self):
+        m = boxes_to_patch_mask([[0, 0, 50, 50]], (100, 100, 740, 740), grid=20, pad=0.0)
+        assert not m.any()
+
+    def test_empty_region_scores_zero(self):
+        smap = np.full((4, 4), 0.6)
+        assert region_score(smap, np.zeros((4, 4), bool)) == 0.0
+        mask = np.zeros((4, 4), bool); mask[0, 0] = True
+        assert region_score(smap, mask) == pytest.approx(0.6)
+
+    def test_window_scores_union_over_frames(self):
+        smap = np.zeros((20, 20)); smap[3, 3] = 1.0      # hot patch under the pedestrian
+        frames = [[self.ped, self.car_near], [self.car_far]]
+        sc = window_region_scores(smap, frames, (0, 0, 640, 640), grid=20, pad=0.0)
+        assert sc["pair_patches"] > 0 and sc["actors_patches"] > sc["pair_patches"] - 1
+        assert sc["pair"] > 0

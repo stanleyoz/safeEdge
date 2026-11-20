@@ -35,6 +35,38 @@
         0.763571823734676
       ],
       "antic_4s_pos": 55
+    },
+    "pair": {
+      "concurrent": 0.8936170212765957,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 30,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 185
+    },
+    "actors": {
+      "concurrent": 0.8927310164098085,
+      "antic_2s": 0.4843010752688172,
+      "antic_2s_ci": [
+        0.4313211061852366,
+        0.5387904766937025
+      ],
+      "antic_2s_pos": 30,
+      "antic_4s": 0.5263795853269537,
+      "antic_4s_ci": [
+        0.455579179858151,
+        0.611062166710112
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 237
     }
   },
   {
@@ -73,6 +105,38 @@
         0.7152944098986935
       ],
       "antic_4s_pos": 55
+    },
+    "pair": {
+      "concurrent": 0.8936170212765957,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 30,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 185
+    },
+    "actors": {
+      "concurrent": 0.9076433518437637,
+      "antic_2s": 0.4864516129032258,
+      "antic_2s_ci": [
+        0.4329440054403973,
+        0.5411814512816299
+      ],
+      "antic_2s_pos": 30,
+      "antic_4s": 0.5283572567783094,
+      "antic_4s_ci": [
+        0.4566182489914285,
+        0.6126620301823883
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 237
     }
   },
   {
@@ -111,6 +175,38 @@
         0.7131531602002503
       ],
       "antic_4s_pos": 8
+    },
+    "pair": {
+      "concurrent": 0.8936170212765957,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 4,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 8,
+      "windows_with_region": 185
+    },
+    "actors": {
+      "concurrent": 0.9260296130396914,
+      "antic_2s": 0.4789156626506024,
+      "antic_2s_ci": [
+        0.4454111630154639,
+        0.5
+      ],
+      "antic_2s_pos": 4,
+      "antic_4s": 0.4783950617283951,
+      "antic_4s_ci": [
+        0.4441489361702128,
+        0.5
+      ],
+      "antic_4s_pos": 8,
+      "windows_with_region": 237
     }
   },
   {
@@ -149,6 +245,38 @@
         0.7541607361429277
       ],
       "antic_4s_pos": 55
+    },
+    "pair": {
+      "concurrent": 0.8936170212765957,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 30,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 185
+    },
+    "actors": {
+      "concurrent": 0.9068696574530479,
+      "antic_2s": 0.48612903225806453,
+      "antic_2s_ci": [
+        0.432610384754454,
+        0.5405735681001096
+      ],
+      "antic_2s_pos": 30,
+      "antic_4s": 0.5288038277511962,
+      "antic_4s_ci": [
+        0.4566146210418016,
+        0.6133291615318137
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 237
     }
   },
   {
@@ -187,6 +315,38 @@
         0.8530412833375722
       ],
       "antic_4s_pos": 55
+    },
+    "pair": {
+      "concurrent": 0.8936170212765957,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 30,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 185
+    },
+    "actors": {
+      "concurrent": 0.8972296749235665,
+      "antic_2s": 0.4864516129032258,
+      "antic_2s_ci": [
+        0.4329440054403973,
+        0.5411814512816299
+      ],
+      "antic_2s_pos": 30,
+      "antic_4s": 0.5299521531100478,
+      "antic_4s_ci": [
+        0.4566811872893526,
+        0.6187738947493606
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 237
     }
   }
 ]

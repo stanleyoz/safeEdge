@@ -26,7 +26,7 @@ established.
 | `scripts/make_synthetic_clip.py` | Synthetic clip + trace for smoke tests (plumbing only) |
 | `results/<run>/` | `summary.json`, `surprise.csv` (per window), `maps.npy` (24×24 surprise maps), `plot.png` |
 | `results/traces/` | Geometric trace of the evaluated clip |
-| `results/table.md`, `table.json` | The table below, as generated |
+| `results/table.md`, `table.json` | The tables below (frame-level and region-pooled), as generated |
 | `paper/` | LaTeX draft (`main.tex`, `references.bib`, `figures/`). `make` builds `main.pdf` in the `texlive/texlive` Docker image; `make arxiv` packages the upload |
 
 ## Results
@@ -68,7 +68,22 @@ in-sample.
    pool surprise around tracked pedestrian–vehicle pairs.
 3. **Distilled ViT-B/L predictors can't score themselves.** They output in the
    ViT-G teacher's 1664-d space, hence the ridge forecaster for edge-sized models.
-4. **Upstream hub download is broken** (`pretrained=True` points at
+4. **Pair-local and actor pooling do not help, and the reason is
+   informative.** Pooling the surprise map over the image regions of
+   pedestrian–vehicle pairs (within 5 m) or of pedestrians + moving vehicles
+   gives anticipation AUROC 0.50 and about 0.49 for every scorer, and an
+   identical "concurrent" 0.894 even for frame differencing: the score becomes
+   "is the object there", which is geometry again. On this camera no calm
+   window ever contains a detected pedestrian — the AOI strip is lined with
+   parked cars, so any pedestrian in it is within 4 m of one and WARNING fires
+   at once; and detection runs on the AOI crop, so only 17 of 681 pedestrian
+   detections fall outside the polygon. "WARNING within 2 s" therefore means
+   "a pedestrian is about to appear", and anticipation can only come from cues
+   before detection. In the highest-scoring pre-warning windows the ViT-g map
+   sits on a person entering at the crop edge (4.8 s, 91.3 s) and on the gap
+   beside a parked SUV just before someone steps out (124 s): a pedestrian the
+   detector cannot yet see. Hypothesis, from four windows.
+5. **Upstream hub download is broken** (`pretrained=True` points at
    `localhost:8300`); the tool loads checkpoints from `dl.fbaipublicfiles.com`.
 
 ## Reproduce
@@ -92,7 +107,9 @@ device. The paper needs consent or anonymisation before any frame is published.
 
 ## Next
 
-- [ ] Pair-local surprise pooling (patches around tracked pedestrian–vehicle pairs)
+- [x] Pair-local and actor pooling (`--score pair|actors`; negative result, finding 4)
+- [ ] Test the pre-detection hypothesis: occlusion-heavy staged runs (stepping out
+      between parked cars, entering at the frame edge) vs runs in the open
 - [ ] Staged near-miss session for more episodes; one public set (DoTA or Street Scene)
 - [ ] ViT-B ridge latency on the Orin NX (FP16/TensorRT)
 - [ ] φ6/φ7 in shadow mode on the live unit

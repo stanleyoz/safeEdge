@@ -238,6 +238,78 @@ def aoi_crop_box(polygon_norm, frame_wh, pad: float) -> tuple[int, int, int, int
             min(fw, int(max(xs) + pw)), min(fh, int(max(ys) + ph)))
 
 
+VEHICLE_LABELS = {"car", "truck", "bus", "motorcycle"}
+
+
+def select_region_objects(objects, kind: str, pair_radius_m: float = 5.0,
+                          moving_mps: float = 0.5) -> list:
+    """Objects (one frame of the trace's "objects") whose image region a
+    region score pools over.
+
+      pair    pedestrians and vehicles in a pedestrian–vehicle pair closer than
+              pair_radius_m on the ground plane (default = φ2 proximity_zone)
+      actors  every pedestrian, plus vehicles moving faster than moving_mps
+              (default = φ1 v_veh_floor) — available before a pair exists
+    """
+    peds = [o for o in objects if o["label"] == "person"]
+    vehs = [o for o in objects if o["label"] in VEHICLE_LABELS]
+    if kind == "actors":
+        return peds + [v for v in vehs if (v.get("speed") or 0.0) > moving_mps]
+    if kind != "pair":
+        raise ValueError(kind)
+    chosen: dict[int, dict] = {}
+    for p in peds:
+        for v in vehs:
+            if p.get("xz") is None or v.get("xz") is None:
+                continue
+            if math.dist(p["xz"], v["xz"]) <= pair_radius_m:
+                chosen[p["id"]] = p
+                chosen[v["id"]] = v
+    return list(chosen.values())
+
+
+def boxes_to_patch_mask(boxes, crop_box, grid: int, pad: float = 0.25) -> np.ndarray:
+    """[grid, grid] bool: patches of the (cropped, squashed) model input that
+    overlap any full-frame box, each box grown by pad × its size per side."""
+    x0, y0, x1, y1 = crop_box
+    sx, sy = grid / (x1 - x0), grid / (y1 - y0)
+    mask = np.zeros((grid, grid), dtype=bool)
+    for bx0, by0, bx1, by1 in boxes:
+        pw, ph = (bx1 - bx0) * pad, (by1 - by0) * pad
+        c0 = int(math.floor((bx0 - pw - x0) * sx))
+        c1 = int(math.ceil((bx1 + pw - x0) * sx))
+        r0 = int(math.floor((by0 - ph - y0) * sy))
+        r1 = int(math.ceil((by1 + ph - y0) * sy))
+        c0, c1 = max(c0, 0), min(c1, grid)
+        r0, r1 = max(r0, 0), min(r1, grid)
+        if c0 < c1 and r0 < r1:
+            mask[r0:r1, c0:c1] = True
+    return mask
+
+
+def region_score(smap: np.ndarray, mask: np.ndarray, q: float = 95.0) -> float:
+    """q-th percentile of the surprise map inside the region; 0.0 when the
+    region is empty — nothing relevant in view means nothing to flag, and 0 is
+    below every real score, so it ranks lowest in AUROC and never crosses τ>0."""
+    return float(np.percentile(smap[mask], q)) if mask.any() else 0.0
+
+
+def window_region_scores(smap, frames_objects, crop_box, grid: int,
+                         pair_radius_m: float = 5.0, moving_mps: float = 0.5,
+                         pad: float = 0.25) -> dict:
+    """Region scores for one window. frames_objects: the trace's per-frame
+    object lists over the window's TARGET interval (the frames the surprise
+    map is about); boxes are unioned across those frames."""
+    out = {}
+    for kind in ("pair", "actors"):
+        boxes = [o["box"] for objs in frames_objects
+                 for o in select_region_objects(objs, kind, pair_radius_m, moving_mps)]
+        mask = boxes_to_patch_mask(boxes, crop_box, grid, pad)
+        out[kind] = region_score(smap, mask)
+        out[f"{kind}_patches"] = int(mask.sum())
+    return out
+
+
 # ── Trace ──────────────────────────────────────────────────────────────────
 
 @dataclass
@@ -245,10 +317,11 @@ class Trace:
     t_s: np.ndarray
     rho1: np.ndarray
     level: np.ndarray
+    objects: list | None = None     # per-frame object lists (newer traces only)
 
     @classmethod
     def load(cls, path: Path, video_fps: float) -> "Trace":
-        frames, rho1, level = [], [], []
+        frames, rho1, level, objects = [], [], [], []
         with open(path) as f:
             for line in f:
                 if line.strip():
@@ -256,10 +329,16 @@ class Trace:
                     frames.append(r["frame"])
                     rho1.append(r["rho1"])
                     level.append(r["level"])
+                    objects.append(r.get("objects"))
         # Align on the VIDEO's frame clock: the edge loop's t_s uses its own
         # --fps, which may differ from the container fps if it was overridden.
+        has_objects = all(o is not None for o in objects)
         return cls(np.asarray(frames) / video_fps, np.asarray(rho1, dtype=float),
-                   np.asarray(level, dtype=int))
+                   np.asarray(level, dtype=int), objects if has_objects else None)
+
+    def objects_between(self, t0: float, t1: float) -> list:
+        sel = np.where((self.t_s > t0) & (self.t_s <= t1))[0]
+        return [self.objects[i] for i in sel] if self.objects is not None else []
 
     def max_level_between(self, t0: float, t1: float) -> int | None:
         sel = (self.t_s >= t0) & (self.t_s <= t1)
@@ -571,9 +650,16 @@ def main() -> None:
     ap.add_argument("--mode", choices=("predictor", "ridge", "persistence", "framediff"),
                     default=None,
                     help="default: predictor for giant/gigantic, ridge for base/large")
-    ap.add_argument("--score", choices=("p95", "mean", "aoi"), default="p95",
+    ap.add_argument("--score", choices=("p95", "mean", "aoi", "pair", "actors"), default="p95",
                     help="window score that is thresholded: 95th-percentile patch "
-                         "(local hazards), whole-frame mean, or mean over AOI patches")
+                         "(local hazards), whole-frame mean, mean over AOI patches, or "
+                         "p95 over the image regions of pedestrian-vehicle pairs ('pair') "
+                         "or of pedestrians + moving vehicles ('actors'); the last two need "
+                         "a trace with per-object boxes")
+    ap.add_argument("--pair-radius-m", type=float, default=5.0,
+                    help="ground distance that makes a pedestrian-vehicle pair (φ2 proximity_zone)")
+    ap.add_argument("--moving-mps", type=float, default=0.5,
+                    help="vehicle speed that counts as moving for 'actors' (φ1 v_veh_floor)")
     ap.add_argument("--video-fps", type=float, default=None,
                     help="TRUE capture fps (frames ÷ wall-duration) when the container's "
                          "fps is wrong — pass the same value as the edge replay's --fps")
@@ -645,6 +731,10 @@ def main() -> None:
                 args.video.name, duration, vfps, *frame_wh, crop_box, args.model, mode)
 
     trace = Trace.load(args.trace, vfps) if args.trace else None
+    regions = trace is not None and trace.objects is not None
+    if args.score in ("pair", "actors") and not regions:
+        ap.error(f"--score {args.score} needs a trace with per-object boxes "
+                 "(re-run `python -m edge.main ... --trace`)")
     span = (args.num_frames - 1) / args.model_fps
     windows = [Window(i, t, int(round(t * vfps)))
                for i, t in enumerate(plan_windows(duration, args.model_fps,
@@ -717,6 +807,11 @@ def main() -> None:
         w.smap = m.mean(0).astype(np.float32)
         w.scores = {"mean": float(w.smap.mean()), "p95": float(np.percentile(w.smap, 95)),
                     "aoi": float(w.smap[aoi_mask].mean())}
+        if regions:
+            target_span = target_slices * TUBELET / args.model_fps
+            w.scores.update(window_region_scores(
+                w.smap, trace.objects_between(t_end - target_span, t_end), crop_box, grid,
+                args.pair_radius_m, args.moving_mps))
         if widx % 20 == 0:
             logger.info("window %d/%d t=%.1fs %s=%.4f (%.0f ms)", widx + 1, len(windows), t_end,
                         args.score, w.scores[args.score], 1000 * timings[-1])
@@ -792,12 +887,15 @@ def main() -> None:
     with open(out / "surprise.csv", "w", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(["t_end_s", "frame_end", "role", "calm", "s_mean", "s_p95", "s_aoi",
-                     "above_tau", "rho1", "level"])
+                     "s_pair", "s_actors", "above_tau", "rho1", "level"])
         for w in windows:
             rho1, lvl = trace.at(w.t_end) if trace is not None else ("", "")
             wr.writerow([f"{w.t_end:.3f}", w.frame_end, w.role, int(w.calm),
                          f"{w.scores['mean']:.6f}", f"{w.scores['p95']:.6f}",
-                         f"{w.scores['aoi']:.6f}", int(w.scores[args.score] > tau),
+                         f"{w.scores['aoi']:.6f}",
+                         f"{w.scores['pair']:.6f}" if regions else "",
+                         f"{w.scores['actors']:.6f}" if regions else "",
+                         int(w.scores[args.score] > tau),
                          rho1, lvl])
     (out / "summary.json").write_text(json.dumps(summary, indent=2))
     np.save(out / "maps.npy", np.stack([w.smap for w in windows]).astype(np.float16))
