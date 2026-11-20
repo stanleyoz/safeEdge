@@ -90,11 +90,14 @@ session must be recorded separately or it will be overwritten.
    14 Aug; note the exact command used to start it so it can be restored).
 2. **Record full-frame raw video continuously** for the whole session, not the
    AOI crop: the crop is applied at analysis, so a wider configuration can be
-   tested later without re-staging. Use `tools/capture_video.py --source webcam`
-   (or the edge loop with recording on and slot rotation off).
-3. **Add per-frame wall-clock timestamps** to the capture (a sidecar CSV). The
-   July clips said 15 fps in the header but ran at 7.7; timestamps remove that
-   guesswork. *Small change to `capture_video.py`; do before the day.*
+   tested later without re-staging. Use
+   `tools/capture_video.py --source webcam --no-preview` over SSH (or the edge
+   loop with recording on and slot rotation off).
+3. **Per-frame wall-clock timestamps:** `capture_video.py` writes
+   `<out>.frames.csv` (frame, Unix wall-clock seconds, monotonic seconds) next
+   to the video and prints the measured fps at the end. The July clips said
+   15 fps in the header but ran at 7.7; the sidecar removes that guesswork.
+   *Still to do: a short test capture on the Jetson.*
 4. **Check the camera has not moved** since July: compare a fresh frame with the
    July frame and re-check two homography points with a tape measure (bay
    width ≈ 2.5 m). If it moved, recalibrate homography and AOI first.
