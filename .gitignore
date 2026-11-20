@@ -40,3 +40,6 @@ research/**/paper/*.log
 research/**/paper/*.out
 research/**/paper/main.pdf
 research/**/paper/arxiv.tar.gz
+research/**/paper/*.fdb_latexmk
+research/**/paper/*.fls
+research/**/paper/build.log

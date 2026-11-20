@@ -27,7 +27,7 @@ established.
 | `results/<run>/` | `summary.json`, `surprise.csv` (per window), `maps.npy` (24×24 surprise maps), `plot.png` |
 | `results/traces/` | Geometric trace of the evaluated clip |
 | `results/table.md`, `table.json` | The table below, as generated |
-| `paper/` | LaTeX draft (`main.tex`, `references.bib`, `figures/`, `Makefile`) |
+| `paper/` | LaTeX draft (`main.tex`, `references.bib`, `figures/`). `make` builds `main.pdf` in the `texlive/texlive` Docker image; `make arxiv` packages the upload |
 
 ## Results
 
