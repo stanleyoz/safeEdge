@@ -1,0 +1,98 @@
+{
+  "video": "data/segment_0455_to_end.mp4",
+  "trace": "research/vjepa-surprise/results_calib-2026-11-21/traces/segment_0455_to_end.trace.jsonl",
+  "model": "giant",
+  "mode": "predictor",
+  "score": "p95",
+  "window": {
+    "num_frames": 16,
+    "model_fps": 4.0,
+    "span_s": 3.75,
+    "target_s": 1.0,
+    "stride_s": 0.5
+  },
+  "crop_box": [
+    0,
+    375,
+    1280,
+    580
+  ],
+  "ridge_from": null,
+  "n_fit_windows_excluded": 0,
+  "calibration": {
+    "alpha": 0.05,
+    "n_calib": 357,
+    "tau": 0.6473456621170044,
+    "basis": "trace level 0"
+  },
+  "events": {
+    "warning_plus": {
+      "onsets_s": [
+        0.0,
+        24.545454545454543,
+        68.05194805194805,
+        91.42857142857143,
+        105.97402597402598,
+        125.71428571428571,
+        149.0909090909091,
+        215.06493506493507,
+        220.5194805194805
+      ],
+      "lead_s": [
+        null,
+        0.0,
+        null,
+        0.0,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "detected": 2,
+      "n": 9,
+      "median_lead_s": 0.0
+    },
+    "rho1_negative": {
+      "onsets_s": [
+        0.0,
+        24.545454545454543,
+        74.41558441558442,
+        91.42857142857143,
+        107.01298701298701,
+        133.37662337662337,
+        155.71428571428572,
+        222.5974025974026
+      ],
+      "lead_s": [
+        null,
+        0.0,
+        0.12987012987014168,
+        0.0,
+        0.0,
+        1.558441558441558,
+        5.844155844155864,
+        null
+      ],
+      "detected": 6,
+      "n": 8,
+      "median_lead_s": 0.06493506493507084
+    }
+  },
+  "warning_episodes": 9,
+  "window_auroc": {
+    "concurrent": 0.8876462765957447,
+    "anticipation_2s": 0.6884987384356602,
+    "anticipation_2s_positives": 29,
+    "anticipation_4s": 0.645153521974714,
+    "anticipation_4s_positives": 55
+  },
+  "surprise_runs": 21,
+  "false_alarms": 2,
+  "false_alarms_per_hour": 25.0,
+  "timing_ms": {
+    "median": 268.56359909288585,
+    "p95": 270.17273532692343,
+    "device": "NVIDIA GeForce RTX 4090"
+  }
+}

@@ -12,7 +12,7 @@ build/
 .env
 
 # Calibration output (machine-specific)
-config/homography.npy
+config/homography*.npy
 
 # Model weights cached by ultralytics
 *.pt

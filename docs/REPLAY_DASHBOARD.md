@@ -42,6 +42,9 @@ button, the file pickers, or by dragging files onto the page.
 | Change alert hold | V-JEPA panel: windows ŝ must stay above 1 before V-JEPA raises WARNING (default 2, about 1 s) |
 | Overlays | **boxes** and **surprise map** checkboxes |
 
+The same clip replayed with the 21 Nov camera calibration is at
+`?data=../../research/vjepa-surprise/results_calib-2026-11-21/compare/segment_0455_to_end.json`.
+
 URL parameters: `?data=<url>` and `?video=<url>` load other files; `?t=` sets
 the start time. For example
 `compare.html?t=125` opens on the SUV pulling out beside a pedestrian.

@@ -21,6 +21,7 @@ cd "$(dirname "$0")/../../.."
 : "${CLIP:?set CLIP}" "${FPS:?set FPS}"
 CAMERA_CFG="${CAMERA_CFG:-config/camera_config.yaml}"
 STL_CFG="${STL_CFG:-config/stl_specs.yaml}"
+YOLO_MODEL="${YOLO_MODEL:-yolov8s.pt}"     # detector weights; pin a local file for identical detections
 ALPHA="${ALPHA:-0.05}"
 OUT="${OUT:-research/vjepa-surprise/results}"
 stem="$(basename "$CLIP" .mp4)"
@@ -29,7 +30,7 @@ mkdir -p "$OUT/traces"
 
 echo "[1] Geometric trace: replay through the unchanged edge loop"
 SAFEEDGE_CFG_STL="$STL_CFG" SAFEEDGE_CFG_CAMERA="$CAMERA_CFG" \
-  python -m edge.main --source file --file-path "$CLIP" --model yolov8s.pt \
+  python -m edge.main --source file --file-path "$CLIP" --model "$YOLO_MODEL" \
     --conf 0.25 --fps "$FPS" --no-record --trace "$trace"
 
 common=(--video "$CLIP" --video-fps "$FPS" --trace "$trace"

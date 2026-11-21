@@ -1,0 +1,352 @@
+[
+  {
+    "run": "framediff",
+    "mode": "framediff",
+    "model": null,
+    "ms_per_window": 6.7614654544740915,
+    "warning_plus_detected": "0/9",
+    "false_alarm_runs": 0,
+    "full": {
+      "concurrent": 0.878623670212766,
+      "antic_2s": 0.5535639192598822,
+      "antic_2s_ci": [
+        0.4142342075231041,
+        0.6924296981931559
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.5586995785671283,
+      "antic_4s_ci": [
+        0.4124405289542641,
+        0.7062735575356542
+      ],
+      "antic_4s_pos": 55
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.8998603723404255,
+      "antic_2s": 0.6100189234650967,
+      "antic_2s_ci": [
+        0.45485767943541056,
+        0.7847664843750001
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.5908187838651415,
+      "antic_4s_ci": [
+        0.4530171743016368,
+        0.7529252313486983
+      ],
+      "antic_4s_pos": 55
+    },
+    "pair": {
+      "concurrent": 0.8672207446808511,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.8902127659574468,
+      "antic_2s": 0.5609756097560976,
+      "antic_2s_ci": [
+        0.4267893157084986,
+        0.6711316144523803
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.5716736905478628,
+      "antic_4s_ci": [
+        0.42844305799505594,
+        0.7025878574117181
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 564
+    }
+  },
+  {
+    "run": "vitb_persistence",
+    "mode": "persistence",
+    "model": "base",
+    "ms_per_window": 39.92118593305349,
+    "warning_plus_detected": "2/9",
+    "false_alarm_runs": 1,
+    "full": {
+      "concurrent": 0.8376329787234043,
+      "antic_2s": 0.5144554247266611,
+      "antic_2s_ci": [
+        0.3364537577973248,
+        0.6866226355515244
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.4839855508729681,
+      "antic_4s_ci": [
+        0.37071914180564086,
+        0.6112736426448996
+      ],
+      "antic_4s_pos": 55
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.8644281914893617,
+      "antic_2s": 0.6459209419680404,
+      "antic_2s_ci": [
+        0.4967877647531884,
+        0.7946288890658944
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.574894641782059,
+      "antic_4s_ci": [
+        0.47049716359313043,
+        0.691727882963437
+      ],
+      "antic_4s_pos": 55
+    },
+    "pair": {
+      "concurrent": 0.8658244680851064,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.895718085106383,
+      "antic_2s": 0.5399495374264087,
+      "antic_2s_ci": [
+        0.33880116930899823,
+        0.6828900788885707
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.508458759783263,
+      "antic_4s_ci": [
+        0.404184068627451,
+        0.6084808170596905
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 564
+    }
+  },
+  {
+    "run": "vitb_ridge_inclip",
+    "mode": "ridge",
+    "model": "base",
+    "ms_per_window": 39.691058453172445,
+    "warning_plus_detected": "7/9",
+    "false_alarm_runs": 9,
+    "full": {
+      "concurrent": 0.9628282828282828,
+      "antic_2s": 0.8347784200385356,
+      "antic_2s_ci": [
+        0.8058716928451983,
+        0.9082125603864735
+      ],
+      "antic_2s_pos": 6,
+      "antic_4s": 0.656508875739645,
+      "antic_4s_ci": [
+        0.6058201058201058,
+        0.9082125603864735
+      ],
+      "antic_4s_pos": 10
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.960479797979798,
+      "antic_2s": 0.8526011560693642,
+      "antic_2s_ci": [
+        0.8203062046736502,
+        0.9855072463768116
+      ],
+      "antic_2s_pos": 6,
+      "antic_4s": 0.7171597633136094,
+      "antic_4s_ci": [
+        0.6591386554621849,
+        0.9855072463768116
+      ],
+      "antic_4s_pos": 10
+    },
+    "pair": {
+      "concurrent": 0.8611111111111112,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 6,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 10,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.9478535353535353,
+      "antic_2s": 0.7418111753371869,
+      "antic_2s_ci": [
+        0.6878787878787879,
+        1.0
+      ],
+      "antic_2s_pos": 6,
+      "antic_4s": 0.6106508875739645,
+      "antic_4s_ci": [
+        0.5608747044917257,
+        1.0
+      ],
+      "antic_4s_pos": 10,
+      "windows_with_region": 564
+    }
+  },
+  {
+    "run": "vitb_ridge_crossseason",
+    "mode": "ridge",
+    "model": "base",
+    "ms_per_window": 39.67905719764531,
+    "warning_plus_detected": "0/9",
+    "false_alarm_runs": 1,
+    "full": {
+      "concurrent": 0.8747606382978723,
+      "antic_2s": 0.670206055508831,
+      "antic_2s_ci": [
+        0.5476774423083478,
+        0.7896451233038517
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.5954244431065623,
+      "antic_4s_ci": [
+        0.4929293613378366,
+        0.6806506662297946
+      ],
+      "antic_4s_pos": 55
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.8879521276595744,
+      "antic_2s": 0.6705740117746005,
+      "antic_2s_ci": [
+        0.5615978867623604,
+        0.8085982201212049
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.6203190848886213,
+      "antic_4s_ci": [
+        0.5160203855634156,
+        0.7453688516513871
+      ],
+      "antic_4s_pos": 55
+    },
+    "pair": {
+      "concurrent": 0.8655718085106383,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.8959308510638297,
+      "antic_2s": 0.5835260723296888,
+      "antic_2s_ci": [
+        0.4334054797256148,
+        0.6932244978634374
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.5646598434677905,
+      "antic_4s_ci": [
+        0.44237509583439816,
+        0.6786075286596118
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 564
+    }
+  },
+  {
+    "run": "vitg_predictor",
+    "mode": "predictor",
+    "model": "giant",
+    "ms_per_window": 268.56359909288585,
+    "warning_plus_detected": "2/9",
+    "false_alarm_runs": 2,
+    "full": {
+      "concurrent": 0.8876396276595745,
+      "antic_2s": 0.6885513036164844,
+      "antic_2s_ci": [
+        0.5583895592230962,
+        0.8350965473263606
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.6451836243226972,
+      "antic_4s_ci": [
+        0.49088790755962614,
+        0.8140843536053508
+      ],
+      "antic_4s_pos": 55
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.8691090425531914,
+      "antic_2s": 0.7043208578637511,
+      "antic_2s_ci": [
+        0.5740749267436518,
+        0.8585910519245922
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.654635761589404,
+      "antic_4s_ci": [
+        0.5111993935663111,
+        0.8211582268702455
+      ],
+      "antic_4s_pos": 55
+    },
+    "pair": {
+      "concurrent": 0.8644414893617022,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.8586037234042553,
+      "antic_2s": 0.5525126156433978,
+      "antic_2s_ci": [
+        0.44362263257575757,
+        0.6595731825398689
+      ],
+      "antic_2s_pos": 29,
+      "antic_4s": 0.574051776038531,
+      "antic_4s_ci": [
+        0.45169794711073447,
+        0.6958182916083712
+      ],
+      "antic_4s_pos": 55,
+      "windows_with_region": 564
+    }
+  }
+]

@@ -211,3 +211,55 @@ Public datasets have few genuine near-misses (scripted activities, not
 conflicts); their value is the variety of normal pedestrian-vehicle behaviour
 around parked cars. Conflicts themselves come from our footage, the staged
 session and simulation.
+
+## Re-run with the 21 Nov camera calibration
+
+The July homography was fitted from assumed bay sizes and is not a physical
+camera (see `docs/calibration/README.md`): it compressed ground distances
+about threefold. The whole pipeline was re-run unchanged except for the new
+homography (`scripts/reproduce.sh`, `YOLO_MODEL` pinned to the same weights),
+into `results_calib-2026-11-21/`; `results/` keeps the July numbers the
+draft currently reports.
+
+| Run | Anticipation 2 s, July homography | Anticipation 2 s, 21 Nov calibration |
+| --- | --- | --- |
+| framediff | 0.483 [0.34, 0.63] | 0.554 [0.41, 0.69] |
+| vitb_persistence | 0.454 [0.31, 0.61] | 0.514 [0.34, 0.69] |
+| vitb_ridge_inclip | 0.575 [0.53, 0.62] | 0.835 [0.81, 0.91] |
+| vitb_ridge_crossseason | 0.619 [0.50, 0.74] | 0.670 [0.55, 0.79] |
+| vitg_predictor | 0.697 [0.55, 0.84] | 0.689 [0.56, 0.84] |
+
+The ViT-g result is unchanged by the recalibration. The in-clip ridge jump is
+not a headline: it is fitted on this clip's own calm windows, which the new
+geometry redefines, and it raises 9 false-alarm runs.
+
+The calibration also changes the STL labels the anticipation metrics are
+scored against, and it shows the July STL tuning was compensating for the
+compressed geometry:
+
+| Replay of segment_0455_to_end | July homography | 21 Nov calibration |
+| --- | --- | --- |
+| Time at WARNING+ (as shown) | 36.3 % | 25.8 % |
+| Time at EMERGENCY | 20.7 % | 7.4 % |
+| EMERGENCY onsets | 6 | 3 |
+| v_veh_max with no pedestrian in view, median | 0.14 m/s | 0.72 m/s (above 0.5 in 76 % of frames) |
+| Genuine conflicts (E3 car in the lane, E6 SUV pulling out) | EMERGENCY, EMERGENCY | WARNING, AWARENESS (d_min 2.0 m, 3.9 m) |
+| Conflict-labeller events (pair under 1.8 m, converging) | 12 | 1 |
+
+Two STL problems follow, both for the edge loop rather than the calibration:
+
+- **Vehicle speed is jitter.** `v_veh_max` is the maximum over every vehicle
+  in view, from a 6-frame velocity estimate with no guard against track-ID
+  switches. In true metres, box jitter on far-row cars reads 0.5-1.2 m/s, so
+  the EMERGENCY speed floor fires on parked cars. Fix: speed from net
+  displacement over about 1 s within the unbroken part of a track (as
+  `tools/conflict_labels.py` does), and only for vehicles paired with a
+  pedestrian.
+- **Thresholds were tuned in compressed metres.** With true distances the
+  genuine conflicts sit at 2-4 m, outside the 1.8 m EMERGENCY and conflict
+  bands. Thresholds should be re-derived in real units, preferably as
+  time-to-collision, against the forensic ground truth (E3, E6 genuine;
+  E1, E2, E5, E8 beside parked cars; E4, E7 lawn walkers).
+
+Until then, the 21 Nov labels are interim: they fix the geometry but inherit
+the speed jitter.

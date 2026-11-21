@@ -1,0 +1,54 @@
+{
+  "video": "/tmp/claude-1000/-home-stanley-projects-safeEdge/abd821c4-084c-4880-9351-95a28c28df35/scratchpad/jetson/live/live_nov20.mp4",
+  "trace": null,
+  "model": "base",
+  "mode": "ridge",
+  "score": "p95",
+  "window": {
+    "num_frames": 16,
+    "model_fps": 4.0,
+    "span_s": 3.75,
+    "target_s": 1.0,
+    "stride_s": 0.5
+  },
+  "crop_box": [
+    0,
+    375,
+    1280,
+    580
+  ],
+  "ridge_from": null,
+  "n_fit_windows_excluded": 116,
+  "calibration": {
+    "alpha": 0.05,
+    "n_calib": 116,
+    "tau": 0.08156755566596985,
+    "basis": "first 999999.0 s"
+  },
+  "events": {
+    "warning_plus": {
+      "onsets_s": [],
+      "lead_s": [],
+      "detected": 0,
+      "n": 0,
+      "median_lead_s": null
+    },
+    "rho1_negative": {
+      "onsets_s": [],
+      "lead_s": [],
+      "detected": 0,
+      "n": 0,
+      "median_lead_s": null
+    }
+  },
+  "warning_episodes": 0,
+  "window_auroc": null,
+  "surprise_runs": 4,
+  "false_alarms": null,
+  "false_alarms_per_hour": null,
+  "timing_ms": {
+    "median": 39.751464733853936,
+    "p95": 39.96844603680074,
+    "device": "NVIDIA GeForce RTX 4090"
+  }
+}
