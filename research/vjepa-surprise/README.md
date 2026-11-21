@@ -299,9 +299,63 @@ Full pipeline re-run with the calibration and the new settings
 
 No July episode was an emergency in true metres (the closest a moving vehicle
 came to a pedestrian was 3.9 m), so all eight are now WARNING. The spec still
-puts any pedestrian within 4 m of a car at WARNING, parked or not; telling a
-pedestrian beside a moving car from one beside a parked car is a spec
-decision, not a signal fix, and is left open.
+puts any pedestrian within 4 m of a car at WARNING, parked or not; see
+"Parked cars as a minor concern" below for the spec decision.
+
+## Parked cars as a minor concern (21 Nov 2026)
+
+Spec decision: a pedestrian beside parked or stationary cars is AWARENESS,
+however close; WARNING needs a vehicle within 5 m of a pedestrian to be moving
+(`intervention.warning.min_vehicle_speed: 0.3` m/s). EMERGENCY keeps its own
+gate.
+
+A speed threshold alone could not separate the episodes: parked cars read
+0.5-0.9 m/s because a pedestrian walking in front of one moves one edge of its
+box (E5, car 32: left edge 936 to 875 px, right edge fixed at 1185), which
+shifts the box centre. A moving car moves both edges together. Vehicle speed
+now comes from the box translation both side edges agree on, plus the bottom
+edge, with shifts up to 2 px ignored (`signals.vehicle_motion: rigid`,
+`motion_deadband_px: 2`; in the far row one pixel is a quarter of a metre);
+edges clipped by the frame border are ignored.
+
+| Episode | Calibration + signal fix | Parked cars minor |
+| --- | --- | --- |
+| E3 car in the lane, E6 SUV pulling out | WARNING | WARNING |
+| E5 | WARNING | WARNING: a car does drive past, 3.7-4.3 m away at 1 m/s (110.8-112.7 s) |
+| E1, E2, E8 beside parked cars; E4, E7 lawn walkers | WARNING | AWARENESS |
+| Time at WARNING+ (as shown) | 27.8 % | 7.6 % |
+
+Any threshold from 0.2 to 0.3 m/s with a 2-4 px deadband gives the same
+episodes. The deadband costs one frame (0.13 s) of EMERGENCY latency for a car
+pulling out along a pedestrian; a car driving at one is unchanged.
+
+**Anticipation benchmark.** "Calm" windows (calibration, ridge fit,
+anticipation set) were those with STL at SAFE. Under this spec every WARNING
+onset is preceded by AWARENESS (the pedestrian is near parked cars before a
+car moves), so no SAFE window precedes any onset. The runs here use
+`--calm-max-level 1`: calm means no alert shown. Results
+(`results_calib-2026-11-21_moving/`, 5 WARNING+ episodes, 24 positive
+windows at 2 s):
+
+| 2 s anticipation | Calibration + signal fix | Parked cars minor |
+| --- | --- | --- |
+| Frame difference | 0.535 [0.39, 0.67] | 0.903 [0.81, 0.97] |
+| ViT-B cross-season ridge | 0.669 [0.55, 0.79] | 0.868 [0.75, 0.97] |
+| ViT-g predictor | 0.687 [0.55, 0.84] | 0.870 [0.76, 0.96] |
+
+With WARNING now meaning "a car near a pedestrian is moving", the target is
+largely motion onset, and pixel change predicts it as well as V-JEPA does.
+The numbers are not comparable across the two columns (different targets and
+calm sets), and five episodes give wide intervals. In-clip ridge is n/a: all
+positive windows fall in the half of the calm set it is fitted on.
+
+**Open: EMERGENCY for moving-car approaches.** Review labels 32.5-35.7 s
+(frames 250-275) and 71.4-74.7 s (frames 550-575) as EMERGENCY: car 2 drives
+along the lane at about 1 m/s while a pedestrian walks into its path. The
+current rule cannot raise it: d_min is measured to the centre of the box's
+bottom edge (about 2 m further than the car body for a side-on car), only the
+nearest pair is gated (a parked car here), and closing counts only the
+vehicle's own approach.
 
 Known gaps: `tests/test_stl_monitor.py` has four failures that predate this
 change (it expects `clearance_critical: 1.5`; the config has used 3.0 since

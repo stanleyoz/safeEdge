@@ -354,7 +354,8 @@ class SafeEdge:
             if self._aoi:
                 tracked = [t for t in tracked if self._aoi.contains_foot(t.bbox_xyxy)]
 
-            bundle   = self._extractor.extract(tracked, depth_m=frame.depth_m)
+            bundle   = self._extractor.extract(tracked, depth_m=frame.depth_m,
+                                              frame_size=frame.color_bgr.shape[:2])
 
             d_pred = predict_min_distance(bundle.pedestrians, bundle.vehicles, horizon_s=4.0)
 

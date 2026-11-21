@@ -35,7 +35,8 @@ from edge.safety.trajectory import predict_min_distance  # noqa: E402
 
 def replay(recs: list[dict], H: np.ndarray, fps: float, stl_path: Path,
            upgrade_hold: int = 3, downgrade_hold: int | None = None,
-           extractor_kwargs: dict | None = None) -> list[dict]:
+           extractor_kwargs: dict | None = None,
+           frame_size: tuple[int, int] = (720, 1280)) -> list[dict]:
     """New trace records from the recorded detections."""
     down = downgrade_hold if downgrade_hold is not None else max(15, int(round(fps * 3)))
     if extractor_kwargs is None:                      # same as the edge loop: the spec's signals section
@@ -48,7 +49,7 @@ def replay(recs: list[dict], H: np.ndarray, fps: float, stl_path: Path,
     for r in recs:
         dets = [RawDetection(o["id"], o["label"], np.asarray(o["box"], float), 1.0)
                 for o in r["objects"] if o["in_aoi"]]
-        b = ex.extract(dets)
+        b = ex.extract(dets, frame_size=frame_size)
         d_pred = predict_min_distance(b.pedestrians, b.vehicles, horizon_s=4.0)
         s = stl.update(SignalFrame(t=r["frame"], d_min=b.d_min, v_veh_max=b.v_veh_max, d_pred=d_pred,
                                    alert_active=eng.alert_active, v_closing=b.v_closing))

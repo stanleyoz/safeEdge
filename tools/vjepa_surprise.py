@@ -671,6 +671,11 @@ def main() -> None:
     ap.add_argument("--stride-s", type=float, default=0.5)
     ap.add_argument("--alpha", type=float, default=0.01,
                     help="target false-alarm rate per calm window (conformal)")
+    ap.add_argument("--calm-max-level", type=int, default=0, choices=(0, 1),
+                    help="highest STL level a window may reach and still count as calm "
+                         "(calibration, ridge fit, anticipation set): 0 SAFE only; 1 also "
+                         "AWARENESS, i.e. no alert shown, for specs where AWARENESS often "
+                         "precedes WARNING (parked cars as a minor concern)")
     ap.add_argument("--calib-s", type=float, default=60.0,
                     help="without a trace: calibrate on windows ending in the first N s")
     ap.add_argument("--max-lead-s", type=float, default=8.0,
@@ -747,7 +752,7 @@ def main() -> None:
     for w in windows:
         if trace is not None:
             lvl = trace.max_level_between(w.t_end - span, w.t_end)
-            w.calm = lvl == 0
+            w.calm = lvl <= args.calm_max_level
         else:
             w.calm = w.t_end <= args.calib_s
     calm = [w for w in windows if w.calm]
@@ -872,7 +877,7 @@ def main() -> None:
         "ridge_from": str(args.ridge_from) if args.ridge_from else None,
         "n_fit_windows_excluded": sum(w.role == "fit" for w in windows),
         "calibration": {"alpha": args.alpha, "n_calib": len(calib), "tau": tau,
-                        "basis": "trace level 0" if trace is not None else f"first {args.calib_s} s"},
+                        "basis": f"trace level <= {args.calm_max_level}" if trace is not None else f"first {args.calib_s} s"},
         "events": {"warning_plus": lead_report(ev_level), "rho1_negative": lead_report(ev_rho)},
         "warning_episodes": len(eps),
         "window_auroc": window_auroc,

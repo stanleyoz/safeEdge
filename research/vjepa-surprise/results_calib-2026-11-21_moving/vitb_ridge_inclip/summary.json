@@ -1,0 +1,90 @@
+{
+  "video": "data/segment_0455_to_end.mp4",
+  "trace": "research/vjepa-surprise/results_calib-2026-11-21_moving/traces/segment_0455_to_end.trace.jsonl",
+  "model": "base",
+  "mode": "ridge",
+  "score": "p95",
+  "window": {
+    "num_frames": 16,
+    "model_fps": 4.0,
+    "span_s": 3.75,
+    "target_s": 1.0,
+    "stride_s": 0.5
+  },
+  "crop_box": [
+    0,
+    375,
+    1280,
+    580
+  ],
+  "ridge_from": null,
+  "n_fit_windows_excluded": 258,
+  "calibration": {
+    "alpha": 0.05,
+    "n_calib": 258,
+    "tau": 0.08248178660869598,
+    "basis": "trace level <= 1"
+  },
+  "events": {
+    "warning_plus": {
+      "onsets_s": [
+        29.35064935064935,
+        73.24675324675324,
+        110.77922077922078,
+        127.92207792207792,
+        135.71428571428572
+      ],
+      "lead_s": [
+        null,
+        0.0,
+        null,
+        0.0,
+        0.0
+      ],
+      "detected": 3,
+      "n": 5,
+      "median_lead_s": 0.0
+    },
+    "rho1_negative": {
+      "onsets_s": [
+        0.0,
+        24.545454545454543,
+        74.41558441558442,
+        91.42857142857143,
+        107.01298701298701,
+        133.37662337662337,
+        155.71428571428572,
+        222.5974025974026
+      ],
+      "lead_s": [
+        null,
+        null,
+        1.0389610389610482,
+        null,
+        null,
+        null,
+        null,
+        0.25974025974028336
+      ],
+      "detected": 2,
+      "n": 8,
+      "median_lead_s": 0.6493506493506658
+    }
+  },
+  "warning_episodes": 5,
+  "window_auroc": {
+    "concurrent": 0.9745478036175711,
+    "anticipation_2s": null,
+    "anticipation_2s_positives": 0,
+    "anticipation_4s": null,
+    "anticipation_4s_positives": 0
+  },
+  "surprise_runs": 13,
+  "false_alarms": 6,
+  "false_alarms_per_hour": 75.0,
+  "timing_ms": {
+    "median": 39.74402556195855,
+    "p95": 40.030494215898216,
+    "device": "NVIDIA GeForce RTX 4090"
+  }
+}

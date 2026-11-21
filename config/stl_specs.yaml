@@ -29,6 +29,11 @@ signals:
   near_radius_m: 5.0        # = phi2 proximity_zone
   closing_mode: vehicle     # vehicle: the vehicle's own approach towards the
                             # pedestrian (mutual: includes the pedestrian walking)
+  vehicle_motion: rigid     # rigid: speed from the box translation both side edges
+                            # agree on, plus the bottom edge (centre: box centre).
+                            # A pedestrian in front of a parked car moves one
+                            # edge of its box; a moving car moves both.
+  motion_deadband_px: 2.0   # box shifts up to this over the window are jitter
 
 # ── SPEC LIBRARY ────────────────────────────────────────────────────────────
 # stl: template string — {param_name} replaced at runtime
@@ -131,6 +136,11 @@ intervention:
   warning:
     level: 2
     rho_min: 1.0        # d_min 3–4 m (ρ1 = d_min − 3) — or φ2/φ3 triggered
+    min_vehicle_speed: 0.3  # m/s — stationary/parked cars are a minor concern:
+                        # below this v_veh_max (vehicles near a pedestrian), a
+                        # WARNING is capped at AWARENESS. EMERGENCY keeps its own
+                        # gate. On the July clip 0.2-0.3 separates the three
+                        # moving-car episodes from the five parked/lawn ones.
     action: warning_alert
     log: true
     cloud_report: true

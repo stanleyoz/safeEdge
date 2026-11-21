@@ -49,7 +49,8 @@ def extractor_options(stl_cfg: dict) -> dict:
     """SignalExtractor keyword arguments from the `signals` section of
     stl_specs.yaml; an absent section keeps the original behaviour."""
     sig = (stl_cfg or {}).get("signals") or {}
-    keys = ("speed_window_s", "max_speed", "vehicle_scope", "near_radius_m", "closing_mode")
+    keys = ("speed_window_s", "max_speed", "vehicle_scope", "near_radius_m", "closing_mode", "vehicle_motion",
+            "motion_deadband_px")
     return {k: sig[k] for k in keys if k in sig}
 
 
@@ -77,6 +78,8 @@ class SignalExtractor:
         vehicle_scope: str = "all",
         near_radius_m: float = 5.0,
         closing_mode: str = "mutual",
+        vehicle_motion: str = "centre",
+        motion_deadband_px: float = 0.0,
     ):
         """speed_window_s, vehicle_scope and closing_mode select how vehicle
         motion is measured (the defaults reproduce the original behaviour):
@@ -98,6 +101,17 @@ class SignalExtractor:
                           "vehicle": the vehicle's velocity towards the
                           pedestrian only, so walking up to a parked car does
                           not count as converging.
+          vehicle_motion  (with speed_window_s) "centre": displacement of the
+                          box's bottom-centre. "rigid": the box translation
+                          both side edges agree on, plus the bottom edge's
+                          shift. A pedestrian walking in front of a parked car
+                          moves one edge of its box, which shifts the centre
+                          by tens of pixels; a moving car moves both edges
+                          together. Edges at the frame border are ignored
+                          (pass frame_size to extract()).
+          motion_deadband_px  (rigid) box shifts up to this many pixels over
+                          the window count as zero: in the far row one pixel
+                          of bottom-edge jitter is a quarter of a metre.
         """
         self._H = homography
         self._vel_est = VelocityEstimator(history_frames, fps)
@@ -106,8 +120,13 @@ class SignalExtractor:
         self._max_speed = max_speed
         self._pos_hist: dict[int, dict[int, np.ndarray]] = {}
         self._frame = 0
-        if vehicle_scope not in ("all", "near") or closing_mode not in ("mutual", "vehicle"):
-            raise ValueError(f"vehicle_scope {vehicle_scope!r} / closing_mode {closing_mode!r}")
+        if vehicle_scope not in ("all", "near") or closing_mode not in ("mutual", "vehicle") \
+                or vehicle_motion not in ("centre", "rigid"):
+            raise ValueError(f"vehicle_scope {vehicle_scope!r} / closing_mode {closing_mode!r} "
+                             f"/ vehicle_motion {vehicle_motion!r}")
+        self._rigid = vehicle_motion == "rigid"
+        self._deadband = motion_deadband_px
+        self._box_hist: dict[int, dict[int, np.ndarray]] = {}
         self._vehicle_scope = vehicle_scope
         self._near_radius = near_radius_m
         self._closing_mode = closing_mode
@@ -132,7 +151,10 @@ class SignalExtractor:
         self,
         detections: list[RawDetection],
         depth_m: np.ndarray | None = None,
+        frame_size: tuple[int, int] | None = None,
     ) -> SignalBundle:
+        """frame_size (height, width) lets vehicle_motion "rigid" ignore box
+        edges clipped by the frame border."""
         pedestrians: list[TrackedObject] = []
         vehicles: list[TrackedObject] = []
         active_ids: set[int] = set()
@@ -164,7 +186,7 @@ class SignalExtractor:
             self._vel_est.update(det.track_id, xyz)
             vel = self._vel_est.get_velocity(det.track_id)
             if self._speed_k is not None and det.label in VEHICLE_LABELS:
-                vel = self._net_velocity(det.track_id, xyz)
+                vel = self._net_velocity(det.track_id, xyz, det.bbox_xyxy, frame_size)
 
             obj = TrackedObject(track_id=det.track_id, label=det.label, xyz=xyz, vel=vel)
             if det.label in PERSON_LABELS:
@@ -175,6 +197,7 @@ class SignalExtractor:
         self._vel_est.prune(active_ids)
         for k in [k for k in self._pos_hist if k not in active_ids]:
             del self._pos_hist[k]
+            self._box_hist.pop(k, None)
         self._frame += 1
 
         d_min, v_pair_raw, veh_closing_raw = _nearest_pair_closing(pedestrians, vehicles)
@@ -213,14 +236,19 @@ class SignalExtractor:
 
     # ── Private ──────────────────────────────────────────────────────────────
 
-    def _net_velocity(self, track_id: int, xyz: np.ndarray) -> np.ndarray:
+    def _net_velocity(self, track_id: int, xyz: np.ndarray, bbox: np.ndarray | None = None,
+                      frame_size: tuple[int, int] | None = None) -> np.ndarray:
         """Velocity from net displacement over the last speed window, within
         the unbroken part of the track; zero until half a window exists."""
         hist = self._pos_hist.setdefault(track_id, {})
+        boxes = self._box_hist.setdefault(track_id, {})
         f = self._frame
         hist[f] = xyz
+        if bbox is not None:
+            boxes[f] = np.asarray(bbox, dtype=float)
         for old in [g for g in hist if g < f - self._speed_k]:
             del hist[old]
+            boxes.pop(old, None)
         g = f
         for b in range(f - 1, f - self._speed_k - 1, -1):
             if b not in hist:
@@ -228,11 +256,46 @@ class SignalExtractor:
             if np.linalg.norm((hist[g] - hist[b])[[0, 2]]) > self._max_speed * (g - b) / self._fps:
                 for old in [h for h in hist if h <= b]:
                     del hist[old]                     # ID switch: the track restarts here
+                    boxes.pop(old, None)
                 break
             g = b
         if f - g < max(1, self._speed_k // 2):
             return np.zeros(3, dtype=np.float32)
-        return ((xyz - hist[g]) / ((f - g) / self._fps)).astype(np.float32)
+        dt = (f - g) / self._fps
+        if self._rigid and g in boxes and f in boxes and self._fx is None:
+            moved = self._rigid_ground_shift(boxes[g], boxes[f], frame_size)
+            if moved is not None:
+                return (moved / dt).astype(np.float32)
+        return ((xyz - hist[g]) / dt).astype(np.float32)
+
+    def _rigid_ground_shift(self, b0: np.ndarray, b1: np.ndarray,
+                            frame_size: tuple[int, int] | None) -> np.ndarray | None:
+        """Ground displacement of the box's bottom-centre when the box is
+        moved by the translation its edges agree on: horizontally the smaller
+        shift of the two side edges if they move the same way (zero if they
+        disagree: one edge occluded or revealed, or the box growing as the car
+        approaches head-on), vertically the bottom edge. Edges within 2 px of
+        the frame border are clipped, so only the other edge counts."""
+        h, w = frame_size if frame_size is not None else (None, None)
+        clipped = lambda e, lim: e <= 2 or (lim is not None and e >= lim - 2)
+        dl, dr = b1[0] - b0[0], b1[2] - b0[2]
+        cl = clipped(b0[0], w) or clipped(b1[0], w)
+        cr = clipped(b0[2], w) or clipped(b1[2], w)
+        if cl and cr:
+            dx = 0.0
+        elif cl or cr:
+            dx = dr if cl else dl
+        else:
+            dx = float(np.sign(dl)) * min(abs(dl), abs(dr)) if dl * dr > 0 else 0.0
+        dy = 0.0 if clipped(b0[3], h) or clipped(b1[3], h) else b1[3] - b0[3]
+        dx, dy = (float(np.sign(d)) * max(0.0, abs(d) - self._deadband) for d in (dx, dy))
+        u, v = (b0[0] + b0[2]) / 2.0, b0[3]
+        p0 = self._H @ np.array([u, v, 1.0])
+        p1 = self._H @ np.array([u + dx, v + dy, 1.0])
+        if abs(p0[2]) < 1e-6 or abs(p1[2]) < 1e-6:
+            return None
+        g0, g1 = p0[:2] / p0[2], p1[:2] / p1[2]
+        return np.array([g1[0] - g0[0], 0.0, g1[1] - g0[1]])
 
     def _foot_to_ground_homography(self, bbox: np.ndarray) -> np.ndarray | None:
         """Project bbox bottom-centre through homography → [X, Z] metres."""

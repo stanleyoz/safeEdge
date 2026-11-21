@@ -64,6 +64,8 @@ def block_ci(scores, labels, times, block_s=20.0, n_boot=2000, seed=0):
         a = auroc(scores[sel], labels[sel])
         if a is not None:
             out.append(a)
+    if not out:                       # no positives (or no negatives) at this horizon
+        return (float("nan"), float("nan"))
     return tuple(np.percentile(out, [2.5, 97.5]))
 
 
@@ -114,6 +116,8 @@ def analyse(run: Path, tt, lv, objects, horizons, far_rows, pair_radius_m, movin
 
 def fmt(res, key, h):
     a, (lo, hi) = res[key][f"antic_{h:g}s"], res[key][f"antic_{h:g}s_ci"]
+    if a is None:                     # one class only among the scored windows
+        return "n/a"
     return f"{a:.3f} [{lo:.2f}, {hi:.2f}]"
 
 
@@ -137,7 +141,7 @@ def main():
           f"| Far-field ({far}) antic. 2 s | WARNING+ raised | False-alarm runs | ms/window |")
     print("| --- | --- | --- | --- | --- | --- | --- | --- |")
     for r in results:
-        ff = f'{r[far]["antic_2s"]:.3f}' if far in r else "-"
+        ff = f'{r[far]["antic_2s"]:.3f}' if far in r and r[far]["antic_2s"] is not None else "-"
         print(f'| {r["run"]} | {r["full"]["concurrent"]:.3f} | {fmt(r, "full", 2)} | '
               f'{fmt(r, "full", 4)} | {ff} | {r["warning_plus_detected"]} | '
               f'{r["false_alarm_runs"]} | {r["ms_per_window"]:.0f} |')

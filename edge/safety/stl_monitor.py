@@ -210,6 +210,13 @@ class STLMonitor:
             raw = 1
         else:
             raw = 0
+        # Stationary vehicles are a minor concern: a pedestrian beside parked
+        # cars is AWARENESS, however close. WARNING needs a vehicle near a
+        # pedestrian to be moving (v_veh_max, scoped by signals.vehicle_scope).
+        # EMERGENCY is left alone: its own gate already requires the vehicle
+        # to approach or move, and recall comes first there.
+        if raw == 2 and v_veh_max < self._intervention_cfg["warning"].get("min_vehicle_speed", 0.0):
+            raw = 1
         return raw
 
     def _scale_factor(self, d_min: float) -> float:
