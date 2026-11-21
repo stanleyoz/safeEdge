@@ -45,14 +45,15 @@ def replay(recs: list[dict], H: np.ndarray, fps: float, stl_path: Path,
     stl = STLMonitor(stl_path)
     eng = InterventionEngine(upgrade_hold=upgrade_hold, downgrade_hold=down)
     out = []
-    f = lambda v: None if v is None else float(v)
+    f = lambda v: None if v is None or not np.isfinite(v) else float(v)
     for r in recs:
         dets = [RawDetection(o["id"], o["label"], np.asarray(o["box"], float), 1.0)
                 for o in r["objects"] if o["in_aoi"]]
         b = ex.extract(dets, frame_size=frame_size)
         d_pred = predict_min_distance(b.pedestrians, b.vehicles, horizon_s=4.0)
         s = stl.update(SignalFrame(t=r["frame"], d_min=b.d_min, v_veh_max=b.v_veh_max, d_pred=d_pred,
-                                   alert_active=eng.alert_active, v_closing=b.v_closing))
+                                   alert_active=eng.alert_active, v_closing=b.v_closing,
+                                   d_moving=b.d_moving, ttc=b.ttc))
         eng.process(s)
         ground = {o.track_id: o for o in (*b.pedestrians, *b.vehicles)}
         objects = []
@@ -62,6 +63,7 @@ def replay(recs: list[dict], H: np.ndarray, fps: float, stl_path: Path,
                             "speed": None if g is None else round(float(np.linalg.norm(g.vel)), 3)})
         out.append({"frame": r["frame"], "t_s": r["frame"] / fps,
                     "d_min": f(b.d_min), "v_veh_max": f(b.v_veh_max), "v_closing": f(b.v_closing),
+                    "d_moving": f(b.d_moving), "ttc": f(b.ttc),
                     "d_pred": f(d_pred), "rho1": f(s.rho1), "rho2": f(s.rho2), "rho3": f(s.rho3),
                     "rho4": f(s.rho4), "rho5": f(s.rho5), "rho_min": f(s.rho_min),
                     "level": int(s.intervention_level), "shown": eng._current_level, "objects": objects})

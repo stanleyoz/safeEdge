@@ -15,7 +15,7 @@ SPEC = Path(__file__).resolve().parents[1] / "config" / "stl_specs.yaml"
 # image px -> ground metres: x = 0.02 u - 12.8, z = 36 - 0.05 v
 H = np.array([[0.02, 0, -12.8], [0, -0.05, 36.0], [0, 0, 1]])
 NEW = dict(speed_window_s=1.0, vehicle_scope="near", closing_mode="vehicle",
-           vehicle_motion="rigid", motion_deadband_px=2.0)
+           vehicle_motion="rigid", motion_deadband_px=2.0, moving_speed=0.3)
 
 
 def box_at(x, z, w=200, h=80):
@@ -35,7 +35,8 @@ def run(objects_at, seconds, opts, seed=0, jitter_px=2.0):
         b = ex.extract(dets)
         s = stl.update(SignalFrame(t=i, d_min=b.d_min, v_veh_max=b.v_veh_max,
                                    d_pred=predict_min_distance(b.pedestrians, b.vehicles, 4.0),
-                                   alert_active=0.0, v_closing=b.v_closing))
+                                   alert_active=0.0, v_closing=b.v_closing,
+                                   d_moving=b.d_moving, ttc=b.ttc))
         out.append((b, s.intervention_level))
     return out
 
@@ -146,9 +147,33 @@ def test_car_entering_at_the_frame_edge_is_motion():
 
 
 def test_parked_cars_are_awareness_moving_cars_warning():
-    """Pedestrian standing 3.5 m from a car (WARNING band): AWARENESS while
-    the car is parked, WARNING once it drives past at 1 m/s."""
+    """Pedestrian standing 3.5 m from a car's body (WARNING band):
+    AWARENESS while the car is parked, WARNING once it drives past at 1 m/s
+    (its 4 m box spans x 3.5-7.5 m). Parked, its centre is 3.5 m away."""
     parked = run(lambda t: [(1, "person", 0.0, 20.0, 30, 80), (2, "car", 3.5, 20.0, 200, 80)], 6, NEW)
-    moving = run(lambda t: [(1, "person", 0.0, 20.0, 30, 80), (2, "car", 3.5, 18.0 + 1.0 * t, 200, 80)], 4, NEW)
+    moving = run(lambda t: [(1, "person", 0.0, 20.0, 30, 80), (2, "car", 5.5, 18.0 + 1.0 * t, 200, 80)], 4, NEW)
     assert max(lv for _, lv in parked) == 1
     assert max(lv for _, lv in moving[int(FPS):]) == 2
+
+
+def test_pedestrian_walking_into_a_moving_cars_path_is_an_emergency():
+    """July clip, 33 s and 72 s: a car drives along the lane at 1 m/s while
+    a pedestrian walks towards its path, and a parked car is the nearest
+    vehicle. To the moving car's body the pair closes inside 3 s:
+    EMERGENCY more than 2 s before the nearest-pair rule's 1.8 m."""
+    def at(t):
+        return [(1, "person", 0.0, min(20.0 + 0.8 * t, 20.6), 30, 80),    # walks towards the lane
+                (2, "car", 8.0 - 1.0 * t, 22.5, 200, 60),             # 4 m long, 2.5 m off, driving left
+                (3, "car", -2.6, 20.0, 200, 80)]                        # parked, nearest
+    first_em = lambda frames: next(i for i, (_, lv) in enumerate(frames) if lv == 3)
+    frames = run(at, 8, NEW)
+    old = run(at, 8, {k: v for k, v in NEW.items() if k != "moving_speed"})
+    em = first_em(frames)
+    assert frames[em][0].ttc < 3.0 and frames[em][0].d_moving > 1.8   # on time to collision
+    assert (first_em(old) - em) / FPS > 2.0           # the nearest-pair rule waits for 1.8 m
+
+
+def test_moving_car_passing_far_from_pedestrian_is_not_an_emergency():
+    """A car drives past 6 m away: no EMERGENCY, whatever its speed."""
+    at = lambda t: [(1, "person", 0.0, 20.0, 30, 80), (2, "car", 10.0 - 2.0 * t, 26.0, 200, 60)]
+    assert max(lv for _, lv in run(at, 10, NEW)) <= 2

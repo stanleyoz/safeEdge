@@ -46,9 +46,11 @@ The same clip replayed with the 21 Nov camera calibration is at
 `?data=../../research/vjepa-surprise/results_calib-2026-11-21/compare/segment_0455_to_end.json`.
 With the calibration and the STL signal fix:
 `?data=../../research/vjepa-surprise/results_calib-2026-11-21_signals/compare/segment_0455_to_end.json`.
-With parked cars as a minor concern (current settings; WARNING needs a moving
-car near the pedestrian):
+With parked cars as a minor concern (WARNING needs a moving car near the
+pedestrian):
 `?data=../../research/vjepa-surprise/results_calib-2026-11-21_moving/compare/segment_0455_to_end.json`.
+Adding EMERGENCY on time to collision with a moving car (current settings):
+`?data=../../research/vjepa-surprise/results_calib-2026-11-21_ttc/compare/segment_0455_to_end.json`.
 
 URL parameters: `?data=<url>` and `?video=<url>` load other files; `?t=` sets
 the start time. For example
@@ -79,15 +81,17 @@ V-JEPA, fused. The event log merges both sources and states for each V-JEPA
 alert whether an STL WARNING+ followed within 8 s.
 
 Moments worth showing on the July clip (the notes describe the July
-settings; with current settings only E3, E5 and E6, where a car is moving
-near the pedestrian, reach WARNING, and the rest stay at AWARENESS):
+settings; with current settings 33 s, 73 s and 110 s are EMERGENCY, E6 is
+WARNING and the rest stay at AWARENESS):
 
 | `?t=` | What happens |
 | --- | --- |
 | 24 | E2: pedestrian walks up to a parked car; STL EMERGENCY with no vehicle moving |
 | 68 | E3: a car drives along the lane with a pedestrian in it (genuine conflict) |
 | 92 | E4: walker crossing the lawn; EMERGENCY from the compressed homography |
-| 110 | E5: a car drives past 3.7-4.3 m from a pedestrian |
+| 32 | A car drives along the lane while a pedestrian walks into its path (EMERGENCY) |
+| 72 | The same again, slower approach (EMERGENCY) |
+| 110 | E5: a car passes a pedestrian at 2 m/s (EMERGENCY) |
 | 125 | E6: SUV pulls out beside a pedestrian (genuine conflict) |
 | 170–210 | Quiet stretch: surprise stays below τ, no V-JEPA alarms |
 

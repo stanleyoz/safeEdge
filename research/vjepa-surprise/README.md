@@ -349,13 +349,46 @@ The numbers are not comparable across the two columns (different targets and
 calm sets), and five episodes give wide intervals. In-clip ridge is n/a: all
 positive windows fall in the half of the calm set it is fitted on.
 
-**Open: EMERGENCY for moving-car approaches.** Review labels 32.5-35.7 s
-(frames 250-275) and 71.4-74.7 s (frames 550-575) as EMERGENCY: car 2 drives
-along the lane at about 1 m/s while a pedestrian walks into its path. The
-current rule cannot raise it: d_min is measured to the centre of the box's
-bottom edge (about 2 m further than the car body for a side-on car), only the
-nearest pair is gated (a parked car here), and closing counts only the
-vehicle's own approach.
+## EMERGENCY on time to collision with a moving car (21 Nov 2026)
+
+Review labels three stretches of the July clip EMERGENCY: 32.5-35.7 s
+(frames 250-275) and 71.4-74.7 s (frames 550-575), where car 2 drives along
+the lane at about 1 m/s while a pedestrian walks into its path, and
+110-112 s (E5), where a car passes a pedestrian at 2 m/s. The nearest-pair
+rule could not raise any of them: d_min is measured to the centre of the
+box's bottom edge (about 2 m further than the body of a side-on car), only
+the nearest pair is gated (a parked car in the first two), and closing
+counted only the vehicle's own approach.
+
+With `signals.moving_speed: 0.3` the extractor pairs every pedestrian with
+every vehicle moving at least that fast, measures distance to the vehicle's
+body (the ground segment under its box's bottom edge) and the pair's mutual
+closing over the 1 s speed window, so a pedestrian walking into a moving
+car's path counts. STL raises EMERGENCY when a moving vehicle's body is
+within 1.8 m, or within 5 m with a time to collision under 3 s
+(`phi1.ttc_emergency`, `ttc_range`), and WARNING when it is within 4 m.
+Parked cars never enter these pairs, so they stay a minor concern.
+
+| July clip, edge loop | Parked cars minor | + moving-car TTC |
+| --- | --- | --- |
+| EMERGENCY onsets | none | 32.7 s, 73.8 s, 110.1 s (frames 252, 568, 848) |
+| E6, SUV pulling out (1.9 m, closing 0.25 m/s) | WARNING | WARNING |
+| E1, E4, E7, E8 | AWARENESS | AWARENESS |
+| Time at EMERGENCY / WARNING+ | 0 % / 7.6 % | 6.4 % / 8.6 % |
+
+Sweeping time to collision over 3-6 s and the range over 4-5 m raises the
+same three and nothing else. 3 s / 5 m raises the first and third earliest
+for no added alarms; the second (a slower approach, time to collision 3-7 s
+until frame 562) is raised at frame 568, 2.3 s into the reviewed stretch,
+and only a 5-6 s threshold raises it earlier. On synthetic approaches the
+rule raises EMERGENCY 4.4 s before the nearest-pair 1.8 m rule; a car
+driving at, or pulling out beside, a pedestrian is unchanged.
+
+V-JEPA (`results_calib-2026-11-21_ttc/`; same calm definition, the targets
+gain about 1 % more WARNING+ frames): frame difference 0.874 [0.76, 0.96],
+ViT-B cross-season ridge 0.857 [0.73, 0.97], ViT-g predictor 0.870
+[0.75, 0.96] at 2 s. Pixel change and V-JEPA remain indistinguishable on
+this target.
 
 Known gaps: `tests/test_stl_monitor.py` has four failures that predate this
 change (it expects `clearance_critical: 1.5`; the config has used 3.0 since

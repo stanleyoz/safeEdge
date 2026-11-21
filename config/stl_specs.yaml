@@ -34,6 +34,10 @@ signals:
                             # A pedestrian in front of a parked car moves one
                             # edge of its box; a moving car moves both.
   motion_deadband_px: 2.0   # box shifts up to this over the window are jitter
+  moving_speed: 0.3         # m/s; pair every pedestrian with every vehicle at least
+                            # this fast: distance to the vehicle's body, mutual
+                            # closing, time to collision (phi1 ttc_emergency).
+                            # Keep equal to intervention.warning.min_vehicle_speed
 
 # ── SPEC LIBRARY ────────────────────────────────────────────────────────────
 # stl: template string — {param_name} replaced at runtime
@@ -65,6 +69,15 @@ specs:
                                 # signals.vehicle_scope near and the 1 s speed window,
                                 # parked-car jitter rarely reaches it; a missed
                                 # emergency is still worse than a false alarm.
+      ttc_emergency: 3.0        # s — EMERGENCY when a moving vehicle (signals.
+                                # moving_speed) is within ttc_range of a pedestrian,
+                                # measured to its body, and the pair closes to
+                                # contact within this time; or within
+                                # proximity_emergency at all. Reviewed on the July
+                                # clip: 33-34 s, 72-74 s and 110-112 s are
+                                # EMERGENCY; omit for the nearest-pair rule only
+      ttc_range: 5.0            # metres (= phi2 proximity_zone); 4 m raises the
+                                # same three a few frames later
     intervention: emergency
 
   phi2:

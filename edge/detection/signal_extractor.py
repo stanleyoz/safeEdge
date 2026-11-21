@@ -43,6 +43,8 @@ class SignalBundle:
     v_closing: float                  # mutual closing speed of nearest pair (m/s, +ve = converging), median-smoothed
     pedestrians: list[TrackedObject]
     vehicles: list[TrackedObject]
+    d_moving: float = float("inf")    # pedestrian to the nearest MOVING vehicle's body (m)
+    ttc: float = float("inf")         # shortest time to collision over moving-vehicle pairs (s)
 
 
 def extractor_options(stl_cfg: dict) -> dict:
@@ -50,7 +52,7 @@ def extractor_options(stl_cfg: dict) -> dict:
     stl_specs.yaml; an absent section keeps the original behaviour."""
     sig = (stl_cfg or {}).get("signals") or {}
     keys = ("speed_window_s", "max_speed", "vehicle_scope", "near_radius_m", "closing_mode", "vehicle_motion",
-            "motion_deadband_px")
+            "motion_deadband_px", "moving_speed")
     return {k: sig[k] for k in keys if k in sig}
 
 
@@ -80,6 +82,7 @@ class SignalExtractor:
         closing_mode: str = "mutual",
         vehicle_motion: str = "centre",
         motion_deadband_px: float = 0.0,
+        moving_speed: float | None = None,
     ):
         """speed_window_s, vehicle_scope and closing_mode select how vehicle
         motion is measured (the defaults reproduce the original behaviour):
@@ -112,6 +115,16 @@ class SignalExtractor:
           motion_deadband_px  (rigid) box shifts up to this many pixels over
                           the window count as zero: in the far row one pixel
                           of bottom-edge jitter is a quarter of a metre.
+          moving_speed    None: d_moving and ttc are not computed (inf). A
+                          number: every pedestrian is paired with every
+                          vehicle moving at least this fast (m/s), not only
+                          the nearest. Distance is to the vehicle's body (the
+                          ground segment under its box's bottom edge), not
+                          its centre, which for a side-on car is about 2 m
+                          further. Closing is the pair's mutual closing over
+                          the speed window, so a pedestrian walking into a
+                          moving car's path counts. d_moving is the smallest
+                          such distance, ttc the smallest distance / closing.
         """
         self._H = homography
         self._vel_est = VelocityEstimator(history_frames, fps)
@@ -125,6 +138,8 @@ class SignalExtractor:
             raise ValueError(f"vehicle_scope {vehicle_scope!r} / closing_mode {closing_mode!r} "
                              f"/ vehicle_motion {vehicle_motion!r}")
         self._rigid = vehicle_motion == "rigid"
+        self._moving_speed = moving_speed
+        self._pair_hist: dict[tuple[int, int], dict[int, float]] = {}
         self._deadband = motion_deadband_px
         self._box_hist: dict[int, dict[int, np.ndarray]] = {}
         self._vehicle_scope = vehicle_scope
@@ -161,6 +176,7 @@ class SignalExtractor:
 
         use_depth = depth_m is not None and self._fx is not None
         dbg: list[str] = []
+        footprints: dict[int, tuple[np.ndarray, np.ndarray] | None] = {}
 
         # NOTE: no occupant/driver filtering. At operational (car-park) resolution
         # a driver behind glass is not reliably detected, so every `person` is a
@@ -189,11 +205,14 @@ class SignalExtractor:
                 vel = self._net_velocity(det.track_id, xyz, det.bbox_xyxy, frame_size)
 
             obj = TrackedObject(track_id=det.track_id, label=det.label, xyz=xyz, vel=vel)
+            if det.label in VEHICLE_LABELS and not use_depth:
+                footprints[det.track_id] = self._bottom_edge_ground(det.bbox_xyxy)
             if det.label in PERSON_LABELS:
                 pedestrians.append(obj)
             elif det.label in VEHICLE_LABELS:
                 vehicles.append(obj)
 
+        d_moving, ttc = self._moving_pairs(pedestrians, vehicles, footprints)
         self._vel_est.prune(active_ids)
         for k in [k for k in self._pos_hist if k not in active_ids]:
             del self._pos_hist[k]
@@ -232,9 +251,52 @@ class SignalExtractor:
             v_closing=v_closing,
             pedestrians=pedestrians,
             vehicles=vehicles,
+            d_moving=d_moving,
+            ttc=ttc,
         )
 
     # ── Private ──────────────────────────────────────────────────────────────
+
+    def _moving_pairs(self, pedestrians: list[TrackedObject], vehicles: list[TrackedObject],
+                      footprints: dict) -> tuple[float, float]:
+        """(d_moving, ttc) over pedestrian / moving-vehicle pairs; see
+        moving_speed. Pair distances are kept per (pedestrian, vehicle) id so
+        closing is measured over the same window as vehicle speed."""
+        inf = float("inf")
+        if self._moving_speed is None:
+            return inf, inf
+        f, k = self._frame, self._speed_k or max(2, int(round(self._fps)))
+        d_moving, ttc, seen = inf, inf, set()
+        for v in vehicles:
+            seg = footprints.get(v.track_id)
+            if seg is None or float(np.linalg.norm(v.vel)) < self._moving_speed:
+                continue
+            for p in pedestrians:
+                d = _point_segment_distance(p.xyz[[0, 2]], *seg)
+                key = (p.track_id, v.track_id)
+                seen.add(key)
+                hist = self._pair_hist.setdefault(key, {})
+                hist[f] = d
+                for old in [g for g in hist if g < f - k]:
+                    del hist[old]
+                d_moving = min(d_moving, d)
+                g = min(hist)
+                if f - g >= max(1, k // 2):
+                    closing = (hist[g] - d) / ((f - g) / self._fps)
+                    if closing > 0.1:
+                        ttc = min(ttc, d / closing)
+        for key in [key for key in self._pair_hist if key not in seen]:
+            del self._pair_hist[key]                  # pair broken: vehicle stopped or a track lost
+        return d_moving, ttc
+
+    def _bottom_edge_ground(self, bbox: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
+        """Ground positions of the box's bottom corners: the near side (or
+        front / back) of the vehicle's footprint."""
+        x1, _, x2, y2 = np.asarray(bbox, dtype=float)
+        pa, pb = self._H @ np.array([x1, y2, 1.0]), self._H @ np.array([x2, y2, 1.0])
+        if abs(pa[2]) < 1e-6 or abs(pb[2]) < 1e-6:
+            return None
+        return pa[:2] / pa[2], pb[:2] / pb[2]
 
     def _net_velocity(self, track_id: int, xyz: np.ndarray, bbox: np.ndarray | None = None,
                       frame_size: tuple[int, int] | None = None) -> np.ndarray:
@@ -334,6 +396,13 @@ class SignalExtractor:
 
         x = (foot_u - self._cx) * z / self._fx
         return np.array([x, z], dtype=np.float32), z
+
+
+def _point_segment_distance(p: np.ndarray, a: np.ndarray, b: np.ndarray) -> float:
+    ab = b - a
+    n = float(ab @ ab)
+    t = 0.0 if n < 1e-12 else float(np.clip((p - a) @ ab / n, 0.0, 1.0))
+    return float(np.linalg.norm(p - (a + t * ab)))
 
 
 def _nearest_pair_closing(

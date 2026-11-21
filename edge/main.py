@@ -366,6 +366,8 @@ class SafeEdge:
                 d_pred=d_pred,
                 alert_active=self._engine.alert_active,
                 v_closing=bundle.v_closing,
+                d_moving=bundle.d_moving,
+                ttc=bundle.ttc,
             )
             state = self._stl.update(sig_frame)
             event = self._engine.process(state)
@@ -429,7 +431,7 @@ class SafeEdge:
 
     def _write_trace(self, bundle, d_pred: float, state, tracked) -> None:
         def f(v):   # numpy scalars (e.g. float32) are not JSON-serialisable
-            return None if v is None else float(v)
+            return None if v is None or not np.isfinite(v) else float(v)
 
         # Per-object image box + ground-plane position/speed, joined on track
         # id, so offline tools can look at the image region of each hazard
@@ -452,6 +454,7 @@ class SafeEdge:
             "frame": self._frame_t, "t_s": self._frame_t / self._fps,
             "d_min": f(bundle.d_min), "v_veh_max": f(bundle.v_veh_max),
             "v_closing": f(bundle.v_closing), "d_pred": f(d_pred),
+            "d_moving": f(bundle.d_moving), "ttc": f(bundle.ttc),
             "rho1": f(state.rho1), "rho2": f(state.rho2), "rho3": f(state.rho3),
             "rho4": f(state.rho4), "rho5": f(state.rho5), "rho_min": f(state.rho_min),
             "level": int(state.intervention_level),

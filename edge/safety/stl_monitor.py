@@ -30,6 +30,8 @@ class SignalFrame:
     d_pred: float                 # predicted minimum distance at t+T_horizon (m)
     alert_active: float           # 1.0 if an alert is currently active, else 0.0
     v_closing: float = 0.0        # radial closing speed of nearest pair (m/s, +ve = converging)
+    d_moving: float = float("inf")  # pedestrian to the nearest moving vehicle's body (m)
+    ttc: float = float("inf")       # shortest time to collision, moving-vehicle pairs (s)
 
 
 @dataclass
@@ -75,7 +77,8 @@ class STLMonitor:
         rho_min = min(available) if available else 0.0
 
         level = self._intervention_level(rho1, rho2, rho3, frame.v_closing,
-                                          frame.d_min, frame.v_veh_max)
+                                          frame.d_min, frame.v_veh_max,
+                                          frame.d_moving, frame.ttc)
         scale = self._scale_factor(frame.d_min)
 
         return SafetyState(
@@ -172,7 +175,8 @@ class STLMonitor:
     # ── Intervention helpers ─────────────────────────────────────────────────
 
     def _intervention_level(self, rho1: float, rho2: float, rho3: float,
-                            v_closing: float, d_min: float, v_veh_max: float) -> int:
+                            v_closing: float, d_min: float, v_veh_max: float,
+                            d_moving: float = float("inf"), ttc: float = float("inf")) -> int:
         # Convergence gate: the monitored hazard is a pedestrian and vehicle
         # CLOSING on each other (relative velocity), NOT absolute vehicle speed.
         # This fires whether the car approaches the pedestrian or vice-versa, and
@@ -217,6 +221,17 @@ class STLMonitor:
         # to approach or move, and recall comes first there.
         if raw == 2 and v_veh_max < self._intervention_cfg["warning"].get("min_vehicle_speed", 0.0):
             raw = 1
+        # Moving-vehicle pairs (signals.moving_speed; inf when not computed):
+        # distance to the vehicle's body over every pair, not only the nearest.
+        # EMERGENCY when a moving vehicle is inside the danger band, or close
+        # and on course to reach the pedestrian within ttc_emergency seconds,
+        # whoever is doing the closing. Within the WARNING band: WARNING.
+        ttc_s = p.get("ttc_emergency")
+        if d_moving < proximity or (ttc_s is not None and ttc < ttc_s
+                                    and d_moving < p.get("ttc_range", 4.0)):
+            raw = 3
+        elif d_moving <= p["clearance_critical"] + warn_rho:
+            raw = max(raw, 2)
         return raw
 
     def _scale_factor(self, d_min: float) -> float:
