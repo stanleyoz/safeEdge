@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeEdge Monitor</title>
+<meta name="description" content="SafeEdge: STL safety monitoring of a car park, live from the edge device or replayed with V-JEPA 2.1 world-model surprise.">
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0d1117; color:#e6edf3; font-family:'Segoe UI',system-ui,sans-serif; height:100vh; display:grid; grid-template-rows:56px 1fr; }
+  header { background:#161b22; border-bottom:1px solid #30363d; display:flex; align-items:center; padding:0 20px; gap:12px; min-width:0; }
+  header h1 { font-size:1rem; font-weight:600; letter-spacing:.05em; color:#58a6ff; white-space:nowrap; }
+  .chan { display:flex; align-items:center; gap:6px; font-size:.66rem; color:#8b949e; text-transform:uppercase; letter-spacing:.08em; }
+  .badge { padding:4px 11px; border-radius:12px; font-size:.72rem; font-weight:700; letter-spacing:.08em; background:#3d4148; color:#fff; transition:background .2s; min-width:92px; text-align:center; }
+  .badge .sub { text-transform:none; letter-spacing:0; font-weight:500; }
+  .hold-msg { display:none; font-size:.72rem; line-height:1.45; color:#e6edf3; background:#2a1f0e; border-left:3px solid #ff9800; border-radius:3px; padding:6px 9px; margin-bottom:10px; }
+  .hold-msg.on { display:block; }
+  .hold-msg b { color:#ffb74d; font-weight:600; font-variant-numeric:tabular-nums; }
+  .mode { display:flex; border:1px solid #30363d; border-radius:8px; overflow:hidden; flex-shrink:0; }
+  .mode button { border:0; border-radius:0; background:#161b22; color:#8b949e; padding:5px 12px; font-size:.74rem; font-weight:600; }
+  .mode button.on { background:#1f6feb; color:#fff; }
+  .mode button + button { border-left:1px solid #30363d; }
+  #conn-dot { width:8px; height:8px; border-radius:50%; background:#6e7681; display:inline-block; margin-right:6px; }
+  #conn-dot.live { background:#00c853; box-shadow:0 0 6px #00c853; }
+  #live-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:none; }
+  body.live #video, body.live #overlay, body.live .demo-only { display:none !important; }
+  body:not(.live) .live-only { display:none !important; }
+  body.live #live-img { display:block; }
+  #live-controls { display:flex; align-items:center; gap:8px; font-size:.74rem; color:#8b949e; }
+  #live-clock { margin-left:auto; font-variant-numeric:tabular-nums; color:#e6edf3; }
+  #live-events { overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:4px; }
+  #clip-badge { font-size:.68rem; color:#8b949e; border:1px solid #30363d; border-radius:10px; padding:3px 9px; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  main { display:grid; grid-template-columns:1fr 360px; grid-template-rows:minmax(0,1fr) 260px; gap:1px; background:#30363d; overflow:hidden; }
+  section { background:#0d1117; padding:14px 16px; overflow:hidden; min-width:0; }
+  h2 { font-size:.7rem; text-transform:uppercase; letter-spacing:.1em; color:#8b949e; margin-bottom:8px; display:flex; justify-content:space-between; gap:8px; }
+  h2 small { text-transform:none; letter-spacing:0; color:#6e7681; font-weight:400; }
+
+  #feed-panel { display:flex; flex-direction:column; gap:8px; }
+  #stage-wrap { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+  #stage { position:relative; background:#000; border-radius:4px; overflow:hidden; }
+  #stage video, #stage canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #stage-empty.compact { inset:auto auto 8px 8px; padding:0; display:block; font-size:.7rem; pointer-events:none; }
+  #stage-empty.compact > div:last-child { display:none; }
+  #stage-empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:#6e7681; font-size:.8rem; text-align:center; padding:20px; }
+  #controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:.74rem; color:#8b949e; }
+  button, select, .file { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:4px 10px; font:inherit; font-size:.74rem; cursor:pointer; }
+  button:hover, .file:hover { border-color:#58a6ff; }
+  .file input { display:none; }
+  label.chk { display:flex; align-items:center; gap:4px; cursor:pointer; }
+  #clock { font-variant-numeric:tabular-nums; color:#e6edf3; margin-left:auto; }
+
+  #side { overflow-y:auto; display:flex; flex-direction:column; gap:14px; }
+  .card { border-top:1px solid #30363d; padding-top:12px; }
+  .card:first-child { border-top:0; padding-top:0; }
+  .rho-row { display:flex; flex-direction:column; gap:4px; margin-bottom:9px; }
+  .rho-label { font-size:.72rem; color:#8b949e; display:flex; justify-content:space-between; }
+  .rho-label span { font-weight:600; color:#e6edf3; }
+  .rho-bar-bg { background:#21262d; border-radius:3px; height:8px; overflow:hidden; }
+  .rho-bar { height:100%; border-radius:3px; min-width:2px; }
+  .sig { font-size:.76rem; display:grid; grid-template-columns:1fr 1fr; gap:5px; color:#8b949e; }
+  .sig b { color:#e6edf3; font-weight:500; font-variant-numeric:tabular-nums; }
+  .row { display:flex; gap:8px; align-items:center; font-size:.74rem; color:#8b949e; margin-bottom:8px; flex-wrap:wrap; }
+  .row select { flex:1; min-width:0; }
+  .note { font-size:.7rem; color:#6e7681; line-height:1.45; margin-top:8px; }
+  .note b { color:#8b949e; font-weight:600; }
+
+  #timeline-panel { position:relative; }
+  #timeline { width:100%; height:calc(100% - 22px); display:block; cursor:ew-resize; touch-action:none; }
+  #events-panel { display:flex; flex-direction:column; }
+  #events { overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:4px; }
+  .ev { font-size:.7rem; padding:4px 8px; border-radius:3px; border-left:3px solid #30363d; background:#161b22; display:flex; gap:8px; cursor:pointer; }
+  .ev:hover { background:#1c2330; }
+  .ev.now { outline:1px solid #58a6ff; }
+  .ev.level-2 { border-color:#ff6d00; } .ev.level-3 { border-color:#d50000; background:#1f1013; } .ev.level-0 { border-color:#00c853; }
+  .ev .t { color:#8b949e; flex-shrink:0; font-variant-numeric:tabular-nums; width:42px; }
+  .ev .src { flex-shrink:0; font-weight:700; font-size:.62rem; letter-spacing:.06em; width:48px; padding-top:1px; }
+  .ev .src.stl { color:#58a6ff; } .ev .src.vj { color:#d2a8ff; }
+  .ev .lead { color:#8b949e; }
+
+  @media (max-width: 900px) {
+    body { height:auto; }
+    header { flex-wrap:wrap; height:auto; padding:10px 16px; }
+    main { grid-template-columns:1fr; grid-template-rows:auto; }
+    #stage-wrap { min-height:220px; }
+    #timeline-panel { height:240px; }
+    #events-panel { max-height:320px; }
+    #clip-badge { margin-left:0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>SafeEdge ◆ STL + V-JEPA 2.1</h1>
+  <div class="mode" role="group" aria-label="Source">
+    <button id="m-live" title="The edge device's live camera and STL monitor">Live</button>
+    <button id="m-demo" title="Replay of the July test clip with V-JEPA 2.1 surprise">Demo clip</button>
+  </div>
+  <div class="chan">STL <div class="badge" id="b-stl">—</div></div>
+  <div class="chan">V-JEPA <div class="badge" id="b-vj">—</div></div>
+  <div class="chan">Fused <div class="badge" id="b-fused">—</div></div>
+  <div id="clip-badge">loading…</div>
+</header>
+<main>
+  <section id="feed-panel">
+    <div id="stage-wrap"><div id="stage">
+      <video id="video" muted playsinline preload="auto"></video>
+      <canvas id="overlay"></canvas>
+      <img id="live-img" alt="Live camera feed from the edge device">
+      <div id="stage-empty">
+        <div id="empty-msg">Loading…</div>
+        <div></div>
+      </div>
+    </div></div>
+    <div id="live-controls" class="live-only">
+      <span><span id="conn-dot"></span><span id="conn-text">connecting…</span></span>
+      <span id="live-clock"></span>
+    </div>
+    <div id="controls" class="demo-only">
+      <button id="play">Play</button>
+      <button id="back" title="Back one frame (Left arrow)">−1 f</button>
+      <button id="fwd" title="Forward one frame (Right arrow)">+1 f</button>
+      <select id="speed" title="Playback speed relative to real time">
+        <option value="0.5">0.5×</option><option value="1" selected>1× real time</option>
+        <option value="2">2×</option><option value="4">4×</option>
+      </select>
+      <label class="chk"><input type="checkbox" id="show-boxes" checked> boxes</label>
+      <label class="chk"><input type="checkbox" id="show-heat" checked> surprise map</label>
+      <span id="clock">t — · f —</span>
+    </div>
+  </section>
+
+  <section id="side">
+    <div class="card">
+      <h2>STL monitor <small id="stl-raw">raw —</small></h2>
+      <div class="hold-msg" id="stl-hold"></div>
+      <div class="note" style="margin:0 0 6px">ρ and signals: this frame</div>
+      <div class="rho-row"><div class="rho-label">φ1 Minimum Separation <span id="val-rho1">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho1"></div></div></div>
+      <div class="rho-row"><div class="rho-label">φ2 Speed-Proximity <span id="val-rho2">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho2"></div></div></div>
+      <div class="rho-row"><div class="rho-label">φ3 Predictive Near-Miss <span id="val-rho3">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho3"></div></div></div>
+      <div class="rho-row"><div class="rho-label">φ4 Emergency Stop <span id="val-rho4">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho4"></div></div></div>
+      <div class="rho-row"><div class="rho-label">φ5 Post-Alert Clearance <span id="val-rho5">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho5"></div></div></div>
+      <div class="sig">
+        <div>d_min <b id="sig-dmin">—</b> m</div><div>v_veh <b id="sig-vveh">—</b> m/s</div>
+        <div>v_closing <b id="sig-vcl">—</b> m/s</div><div>d_pred <b id="sig-dpred">—</b> m</div>
+      </div>
+      <p class="note demo-only" id="stl-note">Level after the edge loop's hysteresis, as the live dashboard showed it.</p>
+      <p class="note live-only">Live from the edge device (Jetson Orin NX): detection, tracking and STL run on the device; this page only views its feed.</p>
+    </div>
+
+    <div class="card">
+      <h2>V-JEPA 2.1 surprise <small id="vj-win" class="demo-only">—</small></h2>
+      <p class="note live-only" style="margin-top:0"><b>Recorded footage only.</b> The world model (ViT-g, 268 ms per window on an RTX 4090) is not deployed on the edge device, so the live view shows STL alone and Fused equals STL. Switch to <b>Demo clip</b> to see V-JEPA surprise next to STL.</p>
+      <div class="demo-only">
+      <div class="row"><select id="run"></select></div>
+      <div class="row">alert when ŝ &gt; 1 for
+        <select id="hold"><option value="1">1 window</option><option value="2" selected>2 windows (≈1 s)</option><option value="3">3 windows</option><option value="4">4 windows</option></select>
+      </div>
+      <div class="rho-row"><div class="rho-label">ŝ = score / τ <span id="val-shat">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-shat"></div></div></div>
+      <div class="sig">
+        <div>score <b id="vj-s">—</b></div><div>τ <b id="vj-tau">—</b></div>
+        <div>AUROC now <b id="vj-auc">—</b></div><div>antic. 2 s <b id="vj-ant">—</b></div>
+      </div>
+      <p class="note" id="vj-note"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Fusion rule</h2>
+      <p class="note" style="margin-top:0"><b>Fused = max(STL, V-JEPA).</b> V-JEPA can raise the level to WARNING (φ7: sustained surprise) but never to EMERGENCY and never lowers it: STL keeps the geometric guarantees, the world model only tightens. V-JEPA has no notion of distance, so it has no EMERGENCY of its own.</p>
+    </div>
+  </section>
+
+  <section id="timeline-panel">
+    <h2>Timeline <small class="demo-only">click or drag to scrub · lanes: STL shown (dimmed half = hold) · STL raw · ŝ (line at τ) · V-JEPA · fused</small><small class="live-only">last 2 minutes · STL level · ρ1 margin (dashed: violation)</small></h2>
+    <canvas id="timeline"></canvas>
+  </section>
+
+  <section id="events-panel">
+    <h2>Event log <small id="ev-summary" class="demo-only"></small></h2>
+    <div id="events" class="demo-only"></div>
+    <div id="live-events" class="live-only"></div>
+  </section>
+</main>
+
+<script>
+// Two sources, switched in the header:
+//   Demo clip  the July test clip replayed with its per-frame STL trace and
+//              V-JEPA 2.1 surprise runs (tools/build_compare_data.py); people in
+//              the video are blurred (tools/anonymise_video.py).
+//   Live       the edge device's own dashboard feed over WebSocket (the feed
+//              the root viewer shows, tunnelled with Tailscale Funnel); STL only.
+//   ?mode=live|demo  start in this mode (default demo)
+//   ?t=<seconds>     demo: start at this clip time
+//   ?host=<host>     live: another SafeEdge unit
+const LEVEL_COLOURS = {0:"#00c853",1:"#ffd600",2:"#ff6d00",3:"#d50000"};
+const LEVEL_LABELS  = {0:"SAFE",1:"AWARENESS",2:"WARNING",3:"EMERGENCY"};
+const RHO_MAX = 8.0, LOOKAHEAD_S = 8.0;
+const Q = new URLSearchParams(location.search);
+const DEFAULT_DATA = "data/segment_0455_to_end.json";
+const DEFAULT_VIDEO = "media/segment_0455_to_end.blurred.mp4";
+const LIVE_HOST = Q.get("host") || "eliza-jetson.tail52ce98.ts.net";
+let mode = null;
+const $ = id => document.getElementById(id);
+addEventListener("error", e => { $("clip-badge").textContent = `error: ${e.message} (line ${e.lineno})`; $("clip-badge").style.color = "#ff6d00"; });
+
+let D = null, run = null, hold = 2;
+let vjLevel = null, fused = null;            // per-frame arrays for the selected run + hold
+let frame = 0, playing = false, hasVideo = false, lastTick = 0;
+const video = $("video"), ov = $("overlay"), octx = ov.getContext("2d");
+const tl = $("timeline"), tctx = tl.getContext("2d");
+
+// ── helpers ───────────────────────────────────────────────────────────────
+const rhoColour = v => v==null ? "#3d4148" : v<0 ? "#d50000" : v<1 ? "#ff6d00" : v<3 ? "#ffd600" : "#00c853";
+const rhoWidth  = v => v==null ? "0%" : Math.min(100, Math.max(2, (v/RHO_MAX)*100)) + "%";
+const fx = (v, n=2) => v==null ? "—" : v >= 99 ? "clear" : v.toFixed(n);
+function setBar(id, v, width, colour){ const b=$("bar-"+id); b.style.width=width; b.style.background=colour; }
+function updateRho(id, v){ $("val-"+id).textContent = v==null ? "n/a" : v.toFixed(2); setBar(id, v, rhoWidth(v), rhoColour(v)); }
+function badge(id, lvl, none="NO DATA"){ const b=$(id);
+  if(lvl==null){ b.textContent=none; b.style.background="#3d4148"; b.style.color="#fff"; return; }
+  b.textContent=LEVEL_LABELS[lvl]; b.style.background=LEVEL_COLOURS[lvl]; b.style.color=lvl<=1?"#000":"#fff"; }
+// Re-run the edge loop's hysteresis to know, per frame, whether the shown level
+// is waiting on a pending change and for how long. Mirrors
+// InterventionEngine.process: a new raw level must persist for upgrade_hold
+// frames to raise, downgrade_hold frames to lower; any change of raw level
+// restarts the count. Checked against the engine's own output on load.
+let holdInfo = null;
+function simulateHold(){
+  const raw = D.frames.level_raw, up = D.stl.upgrade_hold, down = D.stl.downgrade_hold;
+  const n = raw.length, info = new Array(n); let cur = 0, cand = 0, cnt = 0, ok = true;
+  for(let f=0; f<n; f++){
+    const r = raw[f];
+    if(r !== cand){ cand = r; cnt = 1; } else cnt++;
+    const need = r > cur ? up : down;
+    if(cnt >= need && r !== cur) cur = r;
+    if(cur !== D.frames.level[f]) ok = false;
+    info[f] = r !== cur ? {target:r, dir: r > cur ? "up" : "down", elapsed:cnt, left:need-cnt, need} : null;
+  }
+  return ok ? info : null;
+}
+const tOf = f => f / D.clip.fps;
+const fOf = t => Math.max(0, Math.min(D.clip.n_frames-1, Math.round(t * D.clip.fps)));
+
+// latest window whose end is at or before t (scores are stamped causally at window end)
+function windowAt(t){
+  const a = run.t_end_s; let lo=0, hi=a.length-1, k=-1;
+  while(lo<=hi){ const m=(lo+hi)>>1; if(a[m] <= t + 1e-6){ k=m; lo=m+1; } else hi=m-1; }
+  return k;
+}
+const valid = k => k>=0 && run.role[k] !== "fit";   // ridge fit windows are in-sample: not shown as alerts
+
+// AUROC (Mann-Whitney) of score vs "STL WARNING+ shown in the window" among valid windows
+function auroc(scores, labels){
+  const idx = scores.map((s,i)=>i).sort((i,j)=>scores[i]-scores[j]);
+  let r=0, rank=1, npos=0, i=0;
+  while(i<idx.length){ let j=i; while(j+1<idx.length && scores[idx[j+1]]===scores[idx[i]]) j++;
+    const avg=(rank + rank + (j-i))/2; for(let k=i;k<=j;k++){ if(labels[idx[k]]){ r+=avg; npos++; } } rank+=j-i+1; i=j+1; }
+  const nneg = idx.length-npos; if(!npos||!nneg) return null;
+  return (r - npos*(npos+1)/2) / (npos*nneg);
+}
+
+// ── derived channels ───────────────────────────────────────────────────────
+function recompute(){
+  const n = D.clip.n_frames, lv = D.frames.level;
+  const above = run.s.map((s,k) => valid(k) && s > run.tau);
+  const sustained = above.map((_,k) => { if(k < hold-1) return false; for(let j=k-hold+1;j<=k;j++) if(!above[j]) return false; return true; });
+  vjLevel = new Array(n); fused = new Array(n);
+  let k = -1;
+  for(let f=0; f<n; f++){
+    const t = tOf(f);
+    while(k+1 < run.t_end_s.length && run.t_end_s[k+1] <= t + 1e-6) k++;
+    vjLevel[f] = k < 0 ? null : (sustained[k] ? 2 : 0);
+    fused[f] = Math.max(lv[f], vjLevel[f] ?? 0);
+  }
+  // concurrent AUROC over the whole clip, for the selected scorer
+  const sc=[], lab=[];
+  run.t_end_s.forEach((te,k) => { if(!valid(k)) return;
+    const f1=fOf(te), f0=fOf(te-run.span_s); let hot=0; for(let f=f0; f<=f1; f++) if(lv[f]>=2){ hot=1; break; }
+    sc.push(run.s[k]); lab.push(hot); });
+  const auc = auroc(sc, lab);
+  $("vj-auc").textContent = auc==null ? "—" : auc.toFixed(3);
+  $("vj-ant").textContent = run.auroc.anticipation_2s!=null ? run.auroc.anticipation_2s.toFixed(3) : "—";
+  $("vj-tau").textContent = run.tau.toPrecision(4);
+  $("vj-win").textContent = `${run.span_s} s window, last ${run.target_s} s scored`;
+  const lat = run.ms_per_window!=null ? `${Math.round(run.ms_per_window)} ms/window on ${run.device||"GPU"}` : "";
+  $("vj-note").innerHTML = `<b>${run.name}.</b> τ is the split-conformal threshold at α=${run.alpha} from calm windows. `
+    + `Each score is stamped at its window's end, so the channel is causal. ${lat ? lat + "." : ""}`
+    + ` "AUROC now" is computed live against the STL level shown; "antic. 2 s" is from the run's summary (calm windows, STL WARNING+ within 2 s).`;
+  buildEvents(); drawTimeline();
+}
+
+// ── event log ──────────────────────────────────────────────────────────────
+function buildEvents(){
+  const lv = D.frames.level, items = [];
+  D.stl.events.forEach(e => items.push({f:e.frame, src:"stl", level:e.level, msg:e.message}));
+  let prev = 0, nAlerts = 0, nLead = 0;
+  for(let f=0; f<vjLevel.length; f++){
+    const v = vjLevel[f] ?? 0; if(v === prev) continue; prev = v;
+    if(v < 2){ items.push({f, src:"vj", level:0, msg:"V-JEPA: surprise back below τ"}); continue; }
+    nAlerts++;
+    const k = windowAt(tOf(f)), shat = run.s[k]/run.tau;
+    let lead = "";
+    if(lv[f] >= 2) lead = "STL already at WARNING+";
+    else { let g=-1; for(let h=f; h<Math.min(lv.length, f+Math.round(LOOKAHEAD_S*D.clip.fps)); h++) if(lv[h]>=2){ g=h; break; }
+      if(g>=0){ nLead++; lead = `STL WARNING+ followed ${((g-f)/D.clip.fps).toFixed(1)} s later`; }
+      else lead = `no STL WARNING+ within ${LOOKAHEAD_S} s`; }
+    items.push({f, src:"vj", level:2, msg:`V-JEPA WARNING: sustained surprise, ŝ=${shat.toFixed(2)}`, lead});
+  }
+  items.sort((a,b) => a.f-b.f || (a.src==="stl"?-1:1));
+  $("events").innerHTML = items.map(e => `<div class="ev level-${e.level}" data-f="${e.f}">
+    <span class="t">${tOf(e.f).toFixed(1)}s</span><span class="src ${e.src}">${e.src==="stl"?"STL":"V-JEPA"}</span>
+    <span>${e.msg.replace(/</g,"&lt;")}${e.lead?` <span class="lead">· ${e.lead}</span>`:""}</span></div>`).join("");
+  $("ev-summary").textContent = `${nAlerts} V-JEPA alerts, ${nLead} ahead of an STL WARNING+ (≤ ${LOOKAHEAD_S} s)`;
+  [...$("events").children].forEach(el => el.onclick = () => seek(+el.dataset.f));
+}
+
+// ── timeline ───────────────────────────────────────────────────────────────
+function drawTimeline(){
+  if(mode === "live") return drawLiveTimeline();
+  if(!D) return;
+  const dpr = devicePixelRatio || 1, W = tl.clientWidth, H = tl.clientHeight;
+  if(tl.width !== W*dpr || tl.height !== H*dpr){ tl.width = W*dpr; tl.height = H*dpr; }
+  const c = tctx; c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H);
+  const L = 74, R = 8, w = W-L-R, n = D.clip.n_frames, x = f => L + f/(n-1)*w;
+  const lanes = [["STL shown",.15],["STL raw",.08],["ŝ",.37],["V-JEPA",.15],["Fused",.15]];
+  let y = 0; const pos = {};
+  lanes.forEach(([name,h]) => { pos[name] = [y+3, h*H-6]; y += h*H; });
+  c.font = "11px system-ui"; c.textBaseline = "middle";
+  const band = (name, arr) => { const [y0,h] = pos[name];
+    c.fillStyle="#8b949e"; c.fillText(name, 4, y0+h/2);
+    c.fillStyle="#161b22"; c.fillRect(L,y0,w,h);
+    let s=0; for(let f=1; f<=n; f++){ if(f===n || arr[f]!==arr[s]){ const v=arr[s];
+      if(v!=null && v>0){ c.fillStyle=LEVEL_COLOURS[v]; c.fillRect(x(s), y0, Math.max(1,x(f)-x(s)), h); } s=f; } } };
+  band("STL shown", D.frames.level); band("STL raw", D.frames.level_raw);
+  if(holdInfo){ const [hy,hh] = pos["STL shown"]; c.fillStyle = "rgba(13,17,23,.55)";
+    let s0 = -1;
+    for(let f=0; f<=n; f++){ const on = f<n && holdInfo[f] && holdInfo[f].dir === "down";
+      if(on && s0 < 0) s0 = f; if(!on && s0 >= 0){ c.fillRect(x(s0), hy+hh*.5, Math.max(1,x(f)-x(s0)), hh*.5); s0 = -1; } } }
+  band("V-JEPA", vjLevel); band("Fused", fused);
+  // ŝ curve
+  const [y0,h] = pos["ŝ"]; c.fillStyle="#8b949e"; c.fillText("ŝ = s/τ", 4, y0+h/2);
+  c.fillStyle="#161b22"; c.fillRect(L,y0,w,h);
+  const sh = run.s.map(s => s/run.tau), lo = Math.min(...sh), hi = Math.max(...sh, 1.05);
+  const yv = v => y0 + h - (v-lo)/(hi-lo)*h;
+  c.strokeStyle="#ff6d00"; c.setLineDash([4,3]); c.beginPath(); c.moveTo(L,yv(1)); c.lineTo(L+w,yv(1)); c.stroke(); c.setLineDash([]);
+  c.fillStyle="#ff6d00"; c.fillText("τ", L+w-10, yv(1)-7);
+  c.strokeStyle="#d2a8ff"; c.lineWidth=1.2; c.beginPath(); let started=false;
+  run.t_end_s.forEach((te,k) => { const px=x(fOf(te)), py=yv(sh[k]);
+    if(!valid(k)){ started=false; return; } if(!started){ c.moveTo(px,py); started=true; } else c.lineTo(px,py); });
+  c.stroke(); c.lineWidth=1;
+  // time ticks
+  c.fillStyle="#6e7681"; c.font="10px system-ui"; c.textBaseline="bottom";
+  const T = tOf(n-1), step = T > 200 ? 30 : T > 60 ? 10 : 5;
+  for(let t=0; t<=T; t+=step) c.fillText(`${t}s`, x(fOf(t))+2, H);
+  // playhead
+  c.strokeStyle="#e6edf3"; c.beginPath(); c.moveTo(x(frame),0); c.lineTo(x(frame),H-12); c.stroke();
+  tl._map = {L, w, n};
+}
+// Click or drag (scrub) the timeline. Pointer capture keeps the drag alive
+// outside the canvas; seeks are coalesced to one per animation frame so the
+// video decoder is not flooded while scrubbing.
+let scrubbing = false, scrubTarget = null;
+const frameAtX = clientX => { const {L,w,n} = tl._map, r = tl.getBoundingClientRect();
+  return Math.round(Math.max(0, Math.min(1, (clientX - r.left - L)/w)) * (n-1)); };
+function scrubTo(f){
+  if(scrubTarget === null) requestAnimationFrame(() => { if(scrubTarget !== null && scrubTarget !== frame) seek(scrubTarget); scrubTarget = null; });
+  scrubTarget = f;
+}
+tl.addEventListener("pointerdown", e => { if(!D || !tl._map || mode === "live") return;
+  scrubbing = true; tl.setPointerCapture(e.pointerId); setPlaying(false); scrubTo(frameAtX(e.clientX)); });
+tl.addEventListener("pointermove", e => { if(scrubbing) scrubTo(frameAtX(e.clientX)); });
+const endScrub = e => { if(!scrubbing) return; scrubbing = false; tl.releasePointerCapture(e.pointerId); seek(frameAtX(e.clientX)); };
+tl.addEventListener("pointerup", endScrub); tl.addEventListener("pointercancel", endScrub);
+
+// ── overlay ────────────────────────────────────────────────────────────────
+const INFERNO = [[0,0,4],[40,11,84],[101,21,110],[159,42,99],[212,72,66],[245,125,21],[250,193,39],[252,255,164]];
+const LUT = (() => { const t = new Uint8ClampedArray(256*3);
+  for(let i=0;i<256;i++){ const p=i/255*(INFERNO.length-1), a=Math.floor(p), b=Math.min(a+1,INFERNO.length-1), u=p-a;
+    for(let ch=0; ch<3; ch++) t[i*3+ch] = INFERNO[a][ch]*(1-u) + INFERNO[b][ch]*u; } return t; })();
+const heatCanvas = document.createElement("canvas"), hctx = heatCanvas.getContext("2d");
+function drawHeat(k, sx, sy){
+  const m = run._maps; if(!m || k < 0) return;
+  const [, gh, gw] = m.shape; heatCanvas.width = gw; heatCanvas.height = gh;
+  const img = hctx.createImageData(gw, gh), off = k*gh*gw;
+  for(let i=0;i<gh*gw;i++){ const v = m.data[off+i];
+    img.data[i*4]=LUT[v*3]; img.data[i*4+1]=LUT[v*3+1]; img.data[i*4+2]=LUT[v*3+2]; img.data[i*4+3]=v; }
+  hctx.putImageData(img, 0, 0);
+  const [x0,y0,x1,y1] = run.crop_box;
+  octx.imageSmoothingEnabled = true; octx.globalAlpha = .75; octx.drawImage(heatCanvas, x0*sx, y0*sy, (x1-x0)*sx, (y1-y0)*sy); octx.globalAlpha = 1;
+}
+function drawOverlay(){
+  const W = ov.clientWidth, H = ov.clientHeight, dpr = devicePixelRatio||1;
+  if(ov.width !== W*dpr || ov.height !== H*dpr){ ov.width=W*dpr; ov.height=H*dpr; }
+  octx.setTransform(dpr,0,0,dpr,0,0); octx.clearRect(0,0,W,H);
+  if(!hasVideo){ octx.fillStyle="#0b0f14"; octx.fillRect(0,0,W,H); }
+  const sx = W/D.clip.width, sy = H/D.clip.height, k = windowAt(tOf(frame));
+  if($("show-heat").checked && valid(k)) drawHeat(k, sx, sy);
+  const [x0,y0,x1,y1] = run.crop_box;
+  octx.strokeStyle="rgba(210,168,255,.55)"; octx.setLineDash([6,4]); octx.strokeRect(x0*sx, y0*sy, (x1-x0)*sx, (y1-y0)*sy); octx.setLineDash([]);
+  octx.fillStyle="rgba(210,168,255,.8)"; octx.font="11px system-ui"; octx.fillText("V-JEPA input region", x0*sx+6, y0*sy+14);
+  if($("show-boxes").checked){
+    for(const [id,lab,aoi,bx1,by1,bx2,by2] of D.frames.objects[frame]){
+      const col = lab===0 ? "#ff5252" : lab===1 ? "#4fc3f7" : "#bdbdbd";
+      octx.strokeStyle=col; octx.lineWidth = aoi ? 2 : 1; octx.globalAlpha = aoi ? 1 : .5;
+      octx.strokeRect(bx1*sx, by1*sy, (bx2-bx1)*sx, (by2-by1)*sy);
+      if(lab===0){ octx.fillStyle=col; octx.fillText(`p${id}`, bx1*sx, by1*sy-4); }
+      octx.globalAlpha = 1; octx.lineWidth = 1;
+    }
+  }
+}
+
+// ── per-frame render ───────────────────────────────────────────────────────
+function render(){
+  if(!D || mode === "live") return;
+  const F = D.frames, f = frame;
+  badge("b-stl", F.level[f]); badge("b-vj", vjLevel[f], "WARMING UP"); badge("b-fused", fused[f]);
+  const h = holdInfo && holdInfo[f], fps = D.clip.fps, sec = x => (x/fps).toFixed(1);
+  if(h && h.dir === "down"){
+    $("b-stl").innerHTML = `${LEVEL_LABELS[F.level[f]]} <span class="sub">· hold ${sec(h.left)} s</span>`;
+    $("stl-hold").innerHTML = `<b>Holding ${LEVEL_LABELS[F.level[f]]}.</b> This frame reads ${LEVEL_LABELS[h.target]} `
+      + `(for ${sec(h.elapsed)} s). The edge loop lowers an alert only after ${sec(h.need)} s of lower readings, `
+      + `so a momentary detection dropout cannot clear it. Steps down in <b>${sec(h.left)} s</b>.`;
+  } else if(h){
+    $("b-stl").innerHTML = `${LEVEL_LABELS[F.level[f]]} <span class="sub">· confirming</span>`;
+    $("stl-hold").innerHTML = `<b>Confirming ${LEVEL_LABELS[h.target]}.</b> This frame reads ${LEVEL_LABELS[h.target]}; `
+      + `the edge loop raises after ${h.need} consecutive frames (${sec(h.need)} s). Raises in <b>${sec(h.left)} s</b>.`;
+  }
+  $("stl-hold").classList.toggle("on", !!h);
+  ["rho1","rho2","rho3","rho4","rho5"].forEach(k => updateRho(k, F[k][f]));
+  $("sig-dmin").textContent = fx(F.d_min[f]); $("sig-vveh").textContent = fx(F.v_veh_max[f]);
+  $("sig-vcl").textContent = fx(F.v_closing[f]); $("sig-dpred").textContent = fx(F.d_pred[f]);
+  $("stl-raw").textContent = `raw ${LEVEL_LABELS[F.level_raw[f]]}`;
+  const k = windowAt(tOf(f));
+  if(valid(k)){ const sh = run.s[k]/run.tau;
+    $("val-shat").textContent = sh.toFixed(3); $("vj-s").textContent = run.s[k].toPrecision(4);
+    setBar("shat", sh, Math.min(100, sh/1.5*100)+"%", sh > 1 ? "#ff6d00" : "#d2a8ff");
+  } else { $("val-shat").textContent = k<0 ? "warming up" : "fit window"; $("vj-s").textContent = "—"; setBar("shat", null, "0%", "#3d4148"); }
+  $("clock").textContent = `t ${tOf(f).toFixed(2)} s · f ${f} / ${D.clip.n_frames-1}`;
+  drawOverlay(); drawTimeline();
+  const evs = $("events").children; let cur = null;
+  for(const el of evs){ el.classList.remove("now"); if(+el.dataset.f <= f) cur = el; }
+  if(cur){ cur.classList.add("now");
+    if(cur !== render._cur){ render._cur = cur; cur.scrollIntoView({block:"nearest"}); } }
+}
+
+// ── clock: the video when loaded, otherwise a virtual one ──────────────────
+// The container fps is frequently not the capture fps (the July clips say 15,
+// were captured at 7.7), so video time is mapped through the container fps and
+// playback is slowed so 1× means real time.
+function rate(){ return +$("speed").value * (hasVideo ? D.clip.fps / D.clip.container_fps : 1); }
+function seek(f){
+  frame = Math.max(0, Math.min(D.clip.n_frames-1, f));
+  if(hasVideo) video.currentTime = (frame + 0.5) / D.clip.container_fps;
+  render();
+}
+function onVideoFrame(_, meta){
+  frame = Math.min(D.clip.n_frames-1, Math.floor(meta.mediaTime * D.clip.container_fps + 1e-3));
+  render(); if(hasVideo) video.requestVideoFrameCallback(onVideoFrame);
+}
+function tick(ts){
+  if(!playing) return;
+  if(hasVideo && !video.requestVideoFrameCallback){
+    frame = Math.min(D.clip.n_frames-1, Math.floor(video.currentTime * D.clip.container_fps)); render();
+  } else if(!hasVideo){
+    const dt = (ts - (lastTick||ts))/1000; lastTick = ts;
+    const next = frame + dt * D.clip.fps * rate();
+    if(next >= D.clip.n_frames-1){ frame = D.clip.n_frames-1; setPlaying(false); }
+    else frame = next;
+    const f = frame; frame = Math.floor(f); render(); frame = f;
+  }
+  requestAnimationFrame(tick);
+}
+function setPlaying(p){
+  if(!D) return; playing = p; $("play").textContent = p ? "Pause" : "Play"; lastTick = 0;
+  frame = Math.floor(frame);
+  if(hasVideo){ video.playbackRate = rate(); p ? video.play() : video.pause(); }
+  if(p) requestAnimationFrame(tick);
+}
+$("play").onclick = () => setPlaying(!playing);
+$("back").onclick = () => { setPlaying(false); seek(frame-1); };
+$("fwd").onclick  = () => { setPlaying(false); seek(frame+1); };
+$("speed").onchange = () => { if(hasVideo) video.playbackRate = rate(); };
+$("show-boxes").onchange = $("show-heat").onchange = render;
+document.addEventListener("keydown", e => { if(!D || mode === "live" || e.target.tagName==="SELECT") return;
+  if(e.key===" "){ e.preventDefault(); setPlaying(!playing); }
+  if(e.key==="ArrowLeft"){ setPlaying(false); seek(frame-1); }
+  if(e.key==="ArrowRight"){ setPlaying(false); seek(frame+1); } });
+video.addEventListener("ended", () => setPlaying(false));
+video.addEventListener("seeked", () => { if(!playing) render(); });
+
+// ── loading ────────────────────────────────────────────────────────────────
+function decodeMaps(r){
+  if(!r.maps || r._maps) return;
+  const bin = atob(r.maps.b64), data = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) data[i] = bin.charCodeAt(i);
+  r._maps = {shape: r.maps.shape, data};
+}
+function selectRun(i){ run = D.runs[i]; decodeMaps(run); recompute(); render(); }
+function loadData(d){
+  D = d;
+  if(!D.runs || !D.runs.length){ alert("This file has no V-JEPA runs."); return; }
+  $("run").innerHTML = D.runs.map((r,i) => `<option value="${i}">${r.name} (${r.id})</option>`).join("");
+  $("run").onchange = e => selectRun(+e.target.value);
+  $("hold").onchange = e => { hold = +e.target.value; recompute(); render(); };
+  holdInfo = simulateHold();
+  $("stl-note").textContent = `Badge: level after the edge loop's hysteresis (raise after ${D.stl.upgrade_hold} frames, lower after ${D.stl.downgrade_hold} = ${(D.stl.downgrade_hold/D.clip.fps).toFixed(1)} s), as the live dashboard showed it.`
+    + (holdInfo ? "" : " Hold countdown unavailable: the hysteresis replay does not match this file's levels.");
+  $("clip-badge").textContent = demoBadge();
+  fitStage(); selectRun(0);
+  if(Q.get("t")) seek(fOf(+Q.get("t")));
+  // with data in hand the blank frame is useful on its own: shrink the prompt
+  // to a corner note (the controls bar has its own Video button)
+  $("stage-empty").classList.add("compact");
+  $("empty-msg").textContent = "No video: boxes and surprise maps on a blank frame";
+  if(!hasVideo) fetchVideo(DEFAULT_VIDEO);
+}
+// Fetched whole into a blob: plain static servers (python -m http.server) do
+// not answer byte-range requests, without which browsers cannot seek an mp4.
+async function fetchVideo(url){
+  try{
+    $("empty-msg").textContent = "Loading video…";
+    const r = await fetch(url); if(!r.ok) throw new Error(r.status);
+    setVideo(URL.createObjectURL(await r.blob()), true);
+  }catch(e){ $("empty-msg").textContent = "No video: boxes and surprise maps on a blank frame"; }
+}
+function setVideo(src, quiet){
+  video.onloadeddata = () => { hasVideo = true; $("stage-empty").style.display = "none";
+    if(video.requestVideoFrameCallback) video.requestVideoFrameCallback(onVideoFrame);
+    if(D) seek(frame); };
+  video.onerror = () => { $("empty-msg").textContent = "This browser cannot play that video (needs H.264 or VP9; OpenCV mp4v captures must be transcoded)";
+    if(!quiet) alert($("empty-msg").textContent); };
+  video.src = src;
+}
+async function fetchData(url){ const r = await fetch(url, {cache:"no-store"}); if(!r.ok) throw new Error(url); return r.json(); }
+
+function fitStage(){
+  const wrap = $("stage-wrap"), st = $("stage");
+  const ar = D && mode !== "live" ? D.clip.width / D.clip.height : 16/9;
+  const W = wrap.clientWidth, H = wrap.clientHeight || W/ar;
+  const w = Math.min(W, H*ar); st.style.width = w+"px"; st.style.height = (w/ar)+"px";
+  if(D && vjLevel) render();
+  if(mode === "live") drawLiveTimeline();
+}
+addEventListener("resize", fitStage);
+const demoBadge = () => `July test clip · ${(D.clip.n_frames/D.clip.fps).toFixed(0)} s @ ${D.clip.fps} fps · people blurred`;
+
+// ── live mode ──────────────────────────────────────────────────────────────
+// Same protocol as the root viewer (docs/index.html): one JSON message per
+// frame with the level, ρ values, signals, an optional event and the annotated
+// camera frame as base64 JPEG.
+const LIVE_WINDOW_S = 120;
+let ws = null, wsTimer = null, pingTimer = null, liveHist = [];
+function liveConnect(){
+  if(mode !== "live") return;
+  const sock = new WebSocket("wss://" + LIVE_HOST + "/ws"); ws = sock;
+  $("conn-text").textContent = `connecting to ${LIVE_HOST}…`;
+  sock.onopen = () => { if(sock !== ws) return; $("conn-dot").classList.add("live"); $("conn-text").textContent = `live · ${LIVE_HOST}`;
+    pingTimer = setInterval(() => { try { sock.send("ping"); } catch(e){} }, 20000); };
+  sock.onclose = () => { clearInterval(pingTimer); if(sock !== ws) return; $("conn-dot").classList.remove("live");
+    $("conn-text").textContent = "device offline · retrying"; if(!liveHist.length) liveMessage(true);
+    wsTimer = setTimeout(liveConnect, 3000); };
+  sock.onerror = () => {};
+  sock.onmessage = e => { if(sock === ws) onLive(JSON.parse(e.data)); };
+}
+function liveDisconnect(){
+  clearTimeout(wsTimer); clearInterval(pingTimer);
+  const s = ws; ws = null; if(s) try { s.close(); } catch(e){}
+  $("conn-dot").classList.remove("live");
+}
+function liveMessage(offline){
+  $("stage-empty").classList.remove("compact"); $("stage-empty").style.display = "flex";
+  $("empty-msg").innerHTML = offline
+    ? "The edge device is not streaming right now.<br>Switch to <b>Demo clip</b> for the recorded test clip."
+    : "Connecting to the edge device…";
+}
+function onLive(d){
+  const now = Date.now();
+  if(d.frame){ $("live-img").src = "data:image/jpeg;base64," + d.frame; $("stage-empty").style.display = "none"; }
+  badge("b-stl", d.level); badge("b-fused", d.level); badge("b-vj", null, "RECORDED ONLY");
+  const r = d.rho || {}; ["rho1","rho2","rho3","rho4","rho5"].forEach(k => updateRho(k, r[k]));
+  const sg = d.signals || {};
+  $("sig-dmin").textContent = fx(sg.d_min); $("sig-vveh").textContent = fx(sg.v_veh_max);
+  $("sig-vcl").textContent = fx(sg.v_closing); $("sig-dpred").textContent = fx(sg.d_pred);
+  $("stl-raw").textContent = "live"; $("stl-hold").classList.remove("on");
+  $("live-clock").textContent = new Date(now).toLocaleTimeString();
+  liveHist.push({t: now, level: d.level, rho1: r.rho1});
+  while(liveHist.length && liveHist[0].t < now - LIVE_WINDOW_S*1000) liveHist.shift();
+  if(d.event) addLiveEvent(d.event, now);
+  if(!onLive.raf) onLive.raf = requestAnimationFrame(() => { onLive.raf = 0; drawLiveTimeline(); });
+}
+function addLiveEvent(evt, now){
+  const div = document.createElement("div");
+  div.className = "ev level-" + evt.level; div.style.cursor = "default";
+  div.innerHTML = `<span class="t" style="width:64px">${new Date(now).toLocaleTimeString()}</span><span class="src stl">STL</span><span>${(evt.message||"").replace(/</g,"&lt;")}</span>`;
+  const box = $("live-events"); box.prepend(div); if(box.children.length > 50) box.lastChild.remove();
+}
+function drawLiveTimeline(){
+  const dpr = devicePixelRatio || 1, W = tl.clientWidth, H = tl.clientHeight;
+  if(!W || !H) return;
+  if(tl.width !== W*dpr || tl.height !== H*dpr){ tl.width = W*dpr; tl.height = H*dpr; }
+  const c = tctx; c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H);
+  const L = 74, R = 8, w = W-L-R, now = Date.now(), x = t => L + (1 - (now - t)/(LIVE_WINDOW_S*1000)) * w;
+  const y1 = 3, h1 = H*.3 - 6, y2 = H*.3 + 3, h2 = H*.7 - 22;
+  c.font = "11px system-ui"; c.textBaseline = "middle"; c.fillStyle = "#8b949e";
+  c.fillText("STL level", 4, y1+h1/2); c.fillText("ρ1 margin", 4, y2+h2/2);
+  c.fillStyle = "#161b22"; c.fillRect(L,y1,w,h1); c.fillRect(L,y2,w,h2);
+  for(let i=0; i<liveHist.length; i++){ const p = liveHist[i], q = liveHist[i+1];
+    if(p.level > 0){ c.fillStyle = LEVEL_COLOURS[p.level]; c.fillRect(x(p.t), y1, Math.max(1, (q ? x(q.t) : x(now)) - x(p.t)), h1); } }
+  const lo = -3, hi = 8, yv = v => y2 + h2 - (Math.max(lo, Math.min(hi, v)) - lo)/(hi-lo)*h2;
+  c.strokeStyle = "#d50000"; c.setLineDash([4,3]); c.beginPath(); c.moveTo(L, yv(0)); c.lineTo(L+w, yv(0)); c.stroke(); c.setLineDash([]);
+  c.strokeStyle = "#58a6ff"; c.lineWidth = 1.2; c.beginPath(); let on = false;
+  for(const p of liveHist){ if(p.rho1 == null || p.rho1 >= 90){ on = false; continue; }   // no pair in view
+    const px = x(p.t), py = yv(p.rho1); if(!on){ c.moveTo(px,py); on = true; } else c.lineTo(px,py); }
+  c.stroke(); c.lineWidth = 1;
+  c.fillStyle = "#6e7681"; c.font = "10px system-ui"; c.textBaseline = "bottom";
+  for(let s=0; s<=LIVE_WINDOW_S; s+=30) c.fillText(s ? `-${s}s` : "now", x(now - s*1000) - (s ? 0 : 22), H);
+}
+setInterval(() => { if(mode === "live") drawLiveTimeline(); }, 1000);
+
+// ── mode switch ────────────────────────────────────────────────────────────
+let demoLoading = false;
+function loadDemo(){
+  if(demoLoading) return; demoLoading = true;
+  fetchData(DEFAULT_DATA).then(d => { if(mode === "demo") loadData(d); })
+    .catch(e => { $("clip-badge").textContent = `error: ${e.message}`; $("clip-badge").style.color = "#ff6d00"; })
+    .finally(() => { demoLoading = false; });
+}
+function setMode(m){
+  if(m === mode) return;
+  mode = m; document.body.classList.toggle("live", m === "live");
+  $("m-live").classList.toggle("on", m === "live"); $("m-demo").classList.toggle("on", m === "demo");
+  const u = new URL(location.href); u.searchParams.set("mode", m); history.replaceState(null, "", u);
+  if(m === "live"){
+    setPlaying(false);
+    $("clip-badge").textContent = `live · ${LIVE_HOST}`;
+    badge("b-stl", null, "—"); badge("b-vj", null, "RECORDED ONLY"); badge("b-fused", null, "—");
+    liveHist = []; $("live-events").innerHTML = "";
+    liveMessage(false); fitStage(); liveConnect();
+  } else {
+    liveDisconnect();
+    if(D){
+      $("clip-badge").textContent = demoBadge();
+      $("stage-empty").classList.add("compact"); $("stage-empty").style.display = hasVideo ? "none" : "";
+      $("empty-msg").textContent = hasVideo ? "" : "No video: boxes and surprise maps on a blank frame";
+      fitStage(); render();
+    } else { fitStage(); loadDemo(); }
+  }
+}
+$("m-live").onclick = () => setMode("live");
+$("m-demo").onclick = () => setMode("demo");
+setMode(Q.get("mode") === "live" ? "live" : "demo");
+</script>
+</body>
+</html>
