@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeEdge — Map Calibrator</title>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0d1117; color:#e6edf3; font-family:'Segoe UI',system-ui,sans-serif; font-size:14px; }
+  header { background:#161b22; border-bottom:1px solid #30363d; padding:12px 20px; }
+  h1 { font-size:1rem; font-weight:600; letter-spacing:.05em; color:#58a6ff; }
+  .hint { color:#8b949e; font-size:.8rem; margin-top:6px; line-height:1.5; max-width:1100px; }
+  .hint b { color:#e6edf3; font-weight:600; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 20px; border-bottom:1px solid #30363d; }
+  button, .file, select, input[type=number] { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:5px 10px; font:inherit; font-size:.8rem; }
+  button, .file { cursor:pointer; }
+  button:hover, .file:hover { border-color:#58a6ff; }
+  button.on { background:#1f6feb; border-color:#1f6feb; }
+  .file input { display:none; }
+  input[type=number] { width:90px; }
+  .sep { width:1px; height:22px; background:#30363d; }
+  #status { color:#ffd600; font-size:.8rem; margin-left:8px; }
+  main { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:#30363d; }
+  .pane { background:#0d1117; padding:10px; min-width:0; }
+  .pane h2 { font-size:.7rem; text-transform:uppercase; letter-spacing:.1em; color:#8b949e; margin-bottom:6px; display:flex; justify-content:space-between; }
+  .view { position:relative; background:#000; border-radius:4px; overflow:hidden; cursor:crosshair; }
+  .view canvas { display:block; width:100%; }
+  .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#6e7681; font-size:.85rem; text-align:center; padding:20px; }
+  #tables { display:grid; grid-template-columns:1fr 1fr; gap:20px; padding:14px 20px; }
+  table { border-collapse:collapse; width:100%; font-size:.78rem; }
+  th, td { border-bottom:1px solid #21262d; padding:4px 6px; text-align:left; font-variant-numeric:tabular-nums; }
+  th { color:#8b949e; font-weight:500; }
+  td input[type=text] { background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:4px; padding:2px 4px; width:100%; font:inherit; }
+  .bad { color:#ff6d00; font-weight:600; }
+  .ok { color:#00c853; }
+  #fit { font-size:.8rem; color:#8b949e; line-height:1.6; }
+  #fit b { color:#e6edf3; }
+  pre { background:#161b22; border:1px solid #30363d; border-radius:6px; padding:8px; font-size:.72rem; max-height:180px; overflow:auto; white-space:pre-wrap; word-break:break-all; }
+  @media (max-width: 900px) { main, #tables { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>SafeEdge ◆ Map Calibrator</h1>
+  <p class="hint">Pairs landmarks between the <b>camera frame</b> and a <b>scaled site map</b> to fit the image → ground homography.
+    1. Load both images. 2. <b>Set scale</b>: click two map points a known distance apart and type it. 3. <b>Add points</b>: click a ground-level
+    landmark in the frame, then the same spot on the map (post bases, kerb noses, bay-line ends; never car bodies or tops of objects).
+    4. Optional <b>lines</b>: click two map points along a straight edge (kerb, path edge), then two or more frame points anywhere on that edge.
+    At least 4 points, spread near and far, left and right; 8 or more is better. Export the JSON and run <code>tools/check_homography.py</code> on it.
+    Nothing leaves this page.</p>
+</header>
+<div class="bar">
+  <label class="file">Camera frame<input type="file" id="f-frame" accept="image/*"></label>
+  <label class="file">Site map<input type="file" id="f-map" accept="image/*"></label>
+  <label class="file">Import JSON<input type="file" id="f-json" accept=".json"></label>
+  <span class="sep"></span>
+  <button id="m-scale">1 · Set scale</button>
+  <button id="m-point">2 · Add points</button>
+  <button id="m-line">3 · Add line</button>
+  <button id="line-done" disabled>Finish line</button>
+  <span class="sep"></span>
+  <button id="undo">Undo</button>
+  <label>camera height (m, optional) <input type="number" id="cam-h" step="0.1" min="0"></label>
+  <label><input type="checkbox" id="grid" checked> 1 m grid</label>
+  <label title="Warp the site map into the camera view with the current fit: kerbs, posts and edges should line up"><input type="checkbox" id="overlay"> map overlay</label>
+  <label><input type="checkbox" id="hints"> suggested landmarks (point sheet)</label>
+  <span class="sep"></span>
+  <button id="export">Export JSON</button>
+  <button id="copy">Copy</button>
+  <span id="status">Load a camera frame and a site map.</span>
+</div>
+<main>
+  <div class="pane"><h2>Camera frame <span id="frame-info"></span></h2>
+    <div class="view" id="v-frame"><canvas id="c-frame"></canvas><div class="empty" id="e-frame">Load or drop a camera frame (an empty car park is best: bay lines visible)</div></div></div>
+  <div class="pane"><h2>Site map <span id="map-info">scale not set</span></h2>
+    <div class="view" id="v-map"><canvas id="c-map"></canvas><div class="empty" id="e-map">Load or drop the scaled site map</div></div></div>
+</main>
+<div id="tables">
+  <div>
+    <h2 style="font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Points</h2>
+    <table><thead><tr><th>#</th><th>name</th><th>img u, v</th><th>world X, Z (m)</th><th>err px (m)</th><th></th></tr></thead><tbody id="t-points"></tbody></table>
+    <h2 style="font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.1em;margin:12px 0 6px">Lines</h2>
+    <table><thead><tr><th>#</th><th>name</th><th>img points</th><th>rms (m)</th><th></th></tr></thead><tbody id="t-lines"></tbody></table>
+  </div>
+  <div>
+    <div id="fit">Fit appears after 4 points.</div>
+    <pre id="json"></pre>
+  </div>
+</div>
+
+<script>
+// Live preview fit: normalised DLT on the points only. tools/check_homography.py
+// does the full fit (points and lines, refined), leave-one-out errors, the
+// implied camera and the scale checks.
+const HINTS = [   // 21 Nov 2026 empty-car-park frame (camera unchanged since July)
+  {name:"1 lamp post base", u:824, v:513}, {name:"2 left kerb-island nose", u:598, v:500},
+  {name:"3 right kerb-island nose", u:987, v:503}, {name:"4 standpipe base", u:518, v:604},
+  {name:"5 median island near-left end", u:283, v:488}, {name:"6 median island far end", u:505, v:434},
+  {name:"7 small lamp post base", u:420, v:450},
+];
+const HINT_LINES = [{name:"A path far edge", a:[165,617], b:[1279,617]}, {name:"B path near edge", a:[165,689], b:[1279,689]},
+  {name:"C right diagonal kerb", a:[1000,455], b:[1279,497]}, {name:"D far kerb, left", a:[0,436], b:[330,426]}];
+
+const S = { frame:null, map:null, mpp:null, scalePts:[], points:[], lines:[], mode:null, pending:null, curLine:null, H:null };
+const $ = id => document.getElementById(id);
+const cf = $("c-frame"), cm = $("c-map"), xf = cf.getContext("2d"), xm = cm.getContext("2d");
+const status = s => $("status").textContent = s;
+
+// ── homography ────────────────────────────────────────────────────────────
+const ap = (H, [x, y]) => { const w = H[6]*x + H[7]*y + H[8]; return [(H[0]*x + H[1]*y + H[2])/w, (H[3]*x + H[4]*y + H[5])/w]; };
+function normT(P){ const n=P.length, cx=P.reduce((a,p)=>a+p[0],0)/n, cy=P.reduce((a,p)=>a+p[1],0)/n;
+  const d=P.reduce((a,p)=>a+Math.hypot(p[0]-cx,p[1]-cy),0)/n || 1, s=Math.SQRT2/d; return [s,0,-s*cx, 0,s,-s*cy, 0,0,1]; }
+const mul = (A,B) => { const C=new Array(9).fill(0); for(let i=0;i<3;i++)for(let j=0;j<3;j++)for(let k=0;k<3;k++) C[i*3+j]+=A[i*3+k]*B[k*3+j]; return C; };
+function inv3(m){ const [a,b,c,d,e,f,g,h,i]=m, A=e*i-f*h, B=-(d*i-f*g), C=d*h-e*g, det=a*A+b*B+c*C;
+  return [A,-(b*i-c*h),b*f-c*e, B,a*i-c*g,-(a*f-c*d), C,-(a*h-b*g),a*e-b*d].map(x=>x/det); }
+// smallest right singular vector via inverse iteration on M^T M
+function nullVec(M){ const n=9, A=Array.from({length:n},(_,i)=>Array.from({length:n},(_,j)=>M.reduce((s,r)=>s+r[i]*r[j],0)));
+  for(let i=0;i<n;i++) A[i][i] += 1e-12;
+  let v=new Array(n).fill(1);
+  for(let it=0; it<60; it++){ const B=A.map((r,i)=>[...r, v[i]]);       // solve A x = v (Gaussian elimination)
+    for(let c=0;c<n;c++){ let p=c; for(let r=c+1;r<n;r++) if(Math.abs(B[r][c])>Math.abs(B[p][c])) p=r; [B[c],B[p]]=[B[p],B[c]];
+      for(let r=0;r<n;r++) if(r!==c){ const f=B[r][c]/B[c][c]; for(let k=c;k<=n;k++) B[r][k]-=f*B[c][k]; } }
+    const x=B.map((r,i)=>r[n]/r[i]), nm=Math.hypot(...x); v=x.map(t=>t/nm); }
+  return v; }
+function dlt(img, world){
+  const Ti=normT(img), Tw=normT(world), a=img.map(p=>ap(Ti,p)), b=world.map(p=>ap(Tw,p)), rows=[];
+  a.forEach(([x,y],k)=>{ const [u,v]=b[k]; rows.push([-x,-y,-1,0,0,0,u*x,u*y,u]); rows.push([0,0,0,-x,-y,-1,v*x,v*y,v]); });
+  const H = mul(mul(inv3(Tw), nullVec(rows)), Ti); return H.map(x=>x/H[8]); }
+const world = mp => [mp[0]*S.mpp, -mp[1]*S.mpp];     // map pixels -> metres (y flipped: right-handed)
+const mapPx = w => [w[0]/S.mpp, -w[1]/S.mpp];
+
+function refit(){
+  const ok = S.mpp && S.points.length >= 4;
+  S.H = ok ? dlt(S.points.map(p=>p.img), S.points.map(p=>world(p.map))) : null;
+  renderTables(); draw();
+}
+
+// ── drawing ───────────────────────────────────────────────────────────────
+function dot(x, p, col, label, r=5){ x.strokeStyle=col; x.lineWidth=2; x.beginPath(); x.arc(p[0],p[1],r,0,7); x.stroke();
+  if(label){ x.font="bold 13px system-ui"; x.lineWidth=3; x.strokeStyle="#000"; x.strokeText(label,p[0]+7,p[1]-7); x.fillStyle="#fff"; x.fillText(label,p[0]+7,p[1]-7); } }
+function draw(){
+  if(S.frame){ xf.drawImage(S.frame,0,0);
+    if(S.H && S.map && $("overlay").checked) drawMapOverlay();
+    if(S.H && $("grid").checked) drawGrid();
+    if($("hints").checked){ HINTS.forEach(h=>dot(xf,[h.u,h.v],"#ffd600",h.name,7));
+      xf.strokeStyle="#ffd600"; xf.setLineDash([6,4]); HINT_LINES.forEach(l=>{ xf.beginPath(); xf.moveTo(...l.a); xf.lineTo(...l.b); xf.stroke(); xf.fillStyle="#ffd600"; xf.font="bold 13px system-ui"; xf.fillText(l.name, (l.a[0]+l.b[0])/2, (l.a[1]+l.b[1])/2-8); }); xf.setLineDash([]); }
+    S.points.forEach((p,i)=>{ dot(xf,p.img,"#ff3b3b",String(i+1)); if(S.H){ const q=ap(inv3(S.H), world(p.map)); xf.strokeStyle="#ff3b3b"; xf.beginPath(); xf.moveTo(...p.img); xf.lineTo(...q); xf.stroke(); } });
+    S.lines.concat(S.curLine?[S.curLine]:[]).forEach((l,i)=>l.img.forEach(p=>dot(xf,p,"#ff9800",null,3)));
+    if(S.pending) dot(xf,S.pending,"#58a6ff","?",7);
+  }
+  if(S.map){ xm.drawImage(S.map,0,0);
+    S.scalePts.forEach(p=>dot(xm,p,"#00c853","",6));
+    if(S.scalePts.length===2){ xm.strokeStyle="#00c853"; xm.beginPath(); xm.moveTo(...S.scalePts[0]); xm.lineTo(...S.scalePts[1]); xm.stroke(); }
+    S.points.forEach((p,i)=>dot(xm,p.map,"#ff3b3b",String(i+1)));
+    S.lines.concat(S.curLine?[S.curLine]:[]).forEach((l,i)=>{ if(l.map.length){ l.map.forEach(p=>dot(xm,p,"#ff9800",null,4));
+      if(l.map.length===2){ xm.strokeStyle="#ff9800"; xm.lineWidth=2; xm.beginPath(); xm.moveTo(...l.map[0]); xm.lineTo(...l.map[1]); xm.stroke(); } } });
+  }
+}
+// Map warped into the camera view: each frame pixel below the horizon goes
+// through the fit to the ground, then to map pixels, and takes half its colour
+// from the map there. Where the fit is right, kerbs and posts on the map land
+// on the same kerbs and posts in the frame; a mismatched pair shows up as a
+// local misalignment.
+let mapPixels = null;
+function drawMapOverlay(){
+  if(!mapPixels || mapPixels.src !== S.map){
+    const c = document.createElement("canvas"); c.width = S.map.width; c.height = S.map.height;
+    const x = c.getContext("2d"); x.drawImage(S.map, 0, 0);
+    mapPixels = {src:S.map, data:x.getImageData(0, 0, c.width, c.height).data, w:c.width, h:c.height};
+  }
+  const W = cf.width, Hh = cf.height, H = S.H, m = mapPixels;
+  const hz = -(H[6]*W/2 + H[8]) / H[7], top = Math.max(0, Math.ceil(hz + 8));
+  const img = xf.getImageData(0, 0, W, Hh), d = img.data;
+  for(let v = top; v < Hh; v++) for(let u = 0; u < W; u++){
+    const w = H[6]*u + H[7]*v + H[8]; if(w <= 0) continue;
+    const mx = Math.round(((H[0]*u + H[1]*v + H[2]) / w) / S.mpp), my = Math.round(-((H[3]*u + H[4]*v + H[5]) / w) / S.mpp);
+    if(mx < 0 || my < 0 || mx >= m.w || my >= m.h) continue;
+    const i = (v*W + u)*4, j = (my*m.w + mx)*4;
+    d[i] = (d[i] + m.data[j]) >> 1; d[i+1] = (d[i+1] + m.data[j+1]) >> 1; d[i+2] = (d[i+2] + m.data[j+2]) >> 1;
+  }
+  xf.putImageData(img, 0, 0);
+}
+function drawGrid(){
+  const G = inv3(S.H), W = cf.width, Hh = cf.height;
+  // horizon: image rows that map to infinity; draw the grid only well below it
+  const hz = -(S.H[6]*W/2 + S.H[8]) / S.H[7], top = Math.max(0, hz + 60);
+  const ws = []; for(let u=0;u<=W;u+=W/20) for(let v=top; v<=Hh; v+=(Hh-top)/20) ws.push(ap(S.H,[u,v]));
+  const lo=[Math.floor(Math.min(...ws.map(p=>p[0]))), Math.floor(Math.min(...ws.map(p=>p[1])))];
+  const hi=[Math.ceil(Math.max(...ws.map(p=>p[0]))), Math.ceil(Math.max(...ws.map(p=>p[1])))];
+  if(hi[0]-lo[0] > 400 || hi[1]-lo[1] > 400) return;
+  xf.lineWidth=1;
+  for(let axis=0; axis<2; axis++) for(let c=lo[axis]; c<=hi[axis]; c++){
+    xf.strokeStyle = c % 5 === 0 ? "rgba(0,220,255,.8)" : "rgba(0,160,190,.45)"; xf.beginPath(); let pen=false;
+    for(let k=0;k<=200;k++){ const s = lo[1-axis] + (hi[1-axis]-lo[1-axis])*k/200;
+      const p = ap(G, axis===0 ? [c,s] : [s,c]); const inside = p[1]>=top && p[1]<=Hh && p[0]>=0 && p[0]<=W;
+      if(inside){ pen ? xf.lineTo(...p) : xf.moveTo(...p); pen=true; } else pen=false; }
+    xf.stroke(); }
+}
+
+// ── tables / export ───────────────────────────────────────────────────────
+function lineRms(l){ if(!S.H || l.map.length<2) return null;
+  const [a,b]=l.map.map(world), d=[b[0]-a[0], b[1]-a[1]], n=Math.hypot(...d), nv=[-d[1]/n, d[0]/n];
+  const r=l.img.map(p=>{ const w=ap(S.H,p); return (w[0]-a[0])*nv[0] + (w[1]-a[1])*nv[1]; });
+  return Math.sqrt(r.reduce((s,x)=>s+x*x,0)/r.length); }
+function renderTables(){
+  const errs = S.points.map(p=>{ if(!S.H) return null; const w=ap(S.H,p.img), t=world(p.map); return Math.hypot(w[0]-t[0], w[1]-t[1]); });
+  const Gi = S.H ? inv3(S.H) : null;
+  const errPx = S.points.map(p=>{ if(!Gi) return null; const q=ap(Gi, world(p.map)); return Math.hypot(q[0]-p.img[0], q[1]-p.img[1]); });
+  $("t-points").innerHTML = S.points.map((p,i)=>`<tr><td>${i+1}</td><td><input type="text" value="${p.name.replace(/"/g,"&quot;")}" data-i="${i}" class="pn"></td>
+    <td>${p.img.map(Math.round).join(", ")}</td><td>${S.mpp ? world(p.map).map(x=>x.toFixed(2)).join(", ") : "—"}</td>
+    <td class="${errPx[i]>6?"bad":errPx[i]!=null?"ok":""}" title="a careful click is good to about 3 px">${errPx[i]!=null?`${errPx[i].toFixed(1)} (${errs[i].toFixed(2)})`:"—"}</td><td><button data-del="${i}">×</button></td></tr>`).join("");
+  $("t-lines").innerHTML = S.lines.map((l,i)=>{ const r=lineRms(l); return `<tr><td>${i+1}</td><td><input type="text" value="${l.name.replace(/"/g,"&quot;")}" data-l="${i}" class="ln"></td>
+    <td>${l.img.length}</td><td class="${r>0.3?"bad":r!=null?"ok":""}">${r!=null?r.toFixed(2):"—"}</td><td><button data-dell="${i}">×</button></td></tr>`; }).join("");
+  document.querySelectorAll(".pn").forEach(el=>el.oninput=()=>{ S.points[+el.dataset.i].name=el.value; exportJson(); });
+  document.querySelectorAll(".ln").forEach(el=>el.oninput=()=>{ S.lines[+el.dataset.l].name=el.value; exportJson(); });
+  document.querySelectorAll("[data-del]").forEach(el=>el.onclick=()=>{ S.points.splice(+el.dataset.del,1); refit(); });
+  document.querySelectorAll("[data-dell]").forEach(el=>el.onclick=()=>{ S.lines.splice(+el.dataset.dell,1); refit(); });
+  if(S.H){ const rms=Math.sqrt(errs.reduce((s,e)=>s+e*e,0)/errs.length);
+    const hz = -(S.H[6]*640 + S.H[8]) / S.H[7];
+    $("fit").innerHTML = `<b>Preview fit</b> (points only): RMS <b>${rms.toFixed(2)} m</b> over ${S.points.length} points. `
+      + `Horizon row ${hz.toFixed(0)}: it should sit where the ground plane vanishes in the frame. `
+      + `The grid should hug the ground: squares on the lawn and asphalt at the same metre spacing as the map. `
+      + `Red ticks show where the fit puts each landmark; long ticks (over about 6 px) are mis-clicks, mismatched pairs or map mistakes. `
+      + `Tick <b>map overlay</b> to see the map warped into the camera view: kerbs and posts should line up. Run the check script for the full report.`;
+  } else $("fit").textContent = !S.mpp ? "Set the map scale first." : `Fit appears after 4 points (${S.points.length} so far).`;
+  exportJson();
+}
+function payload(){ return { frame_size: S.frame ? [S.frame.width, S.frame.height] : null, map_m_per_px: S.mpp,
+  camera_height_m: parseFloat($("cam-h").value) || null,
+  points: S.points.map(p=>({name:p.name, img:p.img.map(Math.round), world:S.mpp?world(p.map).map(x=>+x.toFixed(3)):null, map_px:p.map.map(Math.round)})),
+  lines: S.lines.filter(l=>l.map.length===2 && l.img.length>=2).map(l=>({name:l.name, img:l.img.map(p=>p.map(Math.round)),
+    world:S.mpp?l.map.map(m=>world(m).map(x=>+x.toFixed(3))):null, map_px:l.map.map(p=>p.map(Math.round))})) }; }
+function exportJson(){ $("json").textContent = JSON.stringify(payload(), null, 1); }
+$("export").onclick = () => { const b=new Blob([JSON.stringify(payload(),null,1)],{type:"application/json"}), a=document.createElement("a");
+  a.href=URL.createObjectURL(b); a.download="calib.json"; a.click(); };
+$("copy").onclick = () => navigator.clipboard.writeText(JSON.stringify(payload())).then(()=>status("copied"));
+$("cam-h").oninput = exportJson;
+$("grid").onchange = $("hints").onchange = $("overlay").onchange = draw;
+
+// ── modes and clicks ──────────────────────────────────────────────────────
+function setMode(m){ S.mode=m; S.pending=null;
+  ["m-scale","m-point","m-line"].forEach(id=>$(id).classList.toggle("on", id==="m-"+m));
+  $("line-done").disabled = m!=="line";
+  if(m==="scale"){ S.scalePts=[]; status("Click two map points a known distance apart."); }
+  if(m==="point") status("Click a ground landmark in the frame, then the same spot on the map.");
+  if(m==="line"){ S.curLine={name:`line ${S.lines.length+1}`, map:[], img:[]}; status("Click two map points along a straight edge, then 2+ frame points on that edge; Finish line."); }
+  draw(); }
+$("m-scale").onclick=()=>setMode("scale"); $("m-point").onclick=()=>setMode("point"); $("m-line").onclick=()=>setMode("line");
+$("line-done").onclick=()=>{ const l=S.curLine; if(l && l.map.length===2 && l.img.length>=2){ S.lines.push(l); S.curLine=null; setMode("line"); refit(); }
+  else status("A line needs 2 map points and at least 2 frame points."); };
+$("undo").onclick=()=>{ if(S.mode==="line" && S.curLine && (S.curLine.img.length||S.curLine.map.length)){ S.curLine.img.length ? S.curLine.img.pop() : S.curLine.map.pop(); }
+  else if(S.pending) S.pending=null; else if(S.points.length) S.points.pop(); refit(); };
+function pos(canvas, e){ const r=canvas.getBoundingClientRect(); return [(e.clientX-r.left)/r.width*canvas.width, (e.clientY-r.top)/r.height*canvas.height]; }
+cf.addEventListener("click", e=>{ if(!S.frame) return; const p=pos(cf,e);
+  if(S.mode==="point"){ S.pending=p; status("Now click the same spot on the map."); }
+  else if(S.mode==="line" && S.curLine){ if(S.curLine.map.length<2){ status("Click the two map points of the edge first."); return; } S.curLine.img.push(p); status(`${S.curLine.img.length} frame points on this edge; add more or Finish line.`); }
+  draw(); });
+cm.addEventListener("click", e=>{ if(!S.map) return; const p=pos(cm,e);
+  if(S.mode==="scale"){ S.scalePts.push(p);
+    if(S.scalePts.length===2){ const d=parseFloat(prompt("Distance between these two map points, in metres:"));
+      const px=Math.hypot(S.scalePts[1][0]-S.scalePts[0][0], S.scalePts[1][1]-S.scalePts[0][1]);
+      if(d>0 && px>0){ S.mpp=d/px; $("map-info").textContent=`${(1/S.mpp).toFixed(2)} px per m`; status("Scale set. Now Add points."); setMode("point"); refit(); }
+      else { S.scalePts=[]; status("Scale not set; try again."); } } }
+  else if(S.mode==="point"){ if(!S.pending){ status("Click the landmark in the frame first."); return; }
+    S.points.push({name:`P${S.points.length+1}`, img:S.pending, map:p}); S.pending=null; status(`${S.points.length} points. Next landmark: frame, then map.`); refit(); return; }
+  else if(S.mode==="line" && S.curLine && S.curLine.map.length<2){ S.curLine.map.push(p); if(S.curLine.map.length===2) status("Now click 2+ points on the same edge in the frame."); }
+  draw(); });
+
+// ── loading ───────────────────────────────────────────────────────────────
+function loadImg(file, which){ const img=new Image(); img.onload=()=>{ const c = which==="frame"?cf:cm; c.width=img.width; c.height=img.height;
+  S[which]=img; $("e-"+which).style.display="none"; if(which==="frame") $("frame-info").textContent=`${img.width}×${img.height}`; refit(); }; img.src=URL.createObjectURL(file); }
+$("f-frame").onchange=e=>e.target.files[0]&&loadImg(e.target.files[0],"frame");
+$("f-map").onchange=e=>e.target.files[0]&&loadImg(e.target.files[0],"map");
+$("f-json").onchange=e=>{ const f=e.target.files[0]; if(!f) return; f.text().then(t=>{ const d=JSON.parse(t);
+  if(d.map_m_per_px){ S.mpp=d.map_m_per_px; $("map-info").textContent=`${(1/S.mpp).toFixed(2)} px per m`; }
+  S.points=(d.points||[]).filter(p=>p.map_px).map(p=>({name:p.name, img:p.img, map:p.map_px}));
+  S.lines=(d.lines||[]).filter(l=>l.map_px).map(l=>({name:l.name, img:l.img, map:l.map_px}));
+  if(d.camera_height_m) $("cam-h").value=d.camera_height_m; status(`imported ${S.points.length} points, ${S.lines.length} lines`); refit(); }); };
+["v-frame","v-map"].forEach(id=>{ const el=$(id); el.addEventListener("dragover",e=>e.preventDefault());
+  el.addEventListener("drop",e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) loadImg(f, id==="v-frame"?"frame":"map"); }); });
+setMode("scale");
+</script>
+</body>
+</html>
