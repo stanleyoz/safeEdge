@@ -166,6 +166,7 @@ qwen_cloud/
 │   └── README.md               # Full deploy runbook + proof-of-deployment checklist
 │
 ├── docs/submission/architecture.html # Accessible system diagram (self-contained)
+├── docs/REPLAY_DASHBOARD.md     # Running the STL-vs-V-JEPA replay dashboard; live dashboard ports
 │
 ├── tools/
 │   ├── live_record.py          # USB cam/D455 + GPU YOLO + distance annotations → MP4

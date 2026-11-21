@@ -1,0 +1,18 @@
+aoi:
+  crop_zoom: true
+  enabled: true
+  pad: 0.08
+  polygon:
+  - - 0.03
+    - 0.787
+  - - 0.993
+    - 0.782
+  - - 0.99
+    - 0.56
+  - - 0.034
+    - 0.541
+homography_file: config/homography.npy
+mock:
+  enabled: false
+source: 0
+target_fps: 15.0

@@ -1,0 +1,101 @@
+graduated_response:
+  proportional_zone_end: 1.5
+  proportional_zone_start: 5.0
+hysteresis:
+  downgrade_hold_frames: 15
+  upgrade_hold_frames: 3
+intervention:
+  awareness:
+    action: log_event
+    level: 1
+    log: true
+    rho_min: 2.0
+  emergency:
+    action: emergency_alert
+    cloud_report: true
+    level: 3
+    log: true
+    rho_min: -9999
+  safe:
+    action: pass_through
+    level: 0
+    log: false
+    rho_min: 3.0
+  warning:
+    action: warning_alert
+    cloud_report: true
+    level: 2
+    log: true
+    rho_min: 1.0
+sample_rate_hz: 30
+specs:
+  phi1:
+    description: 'Pedestrian-vehicle clearance must always exceed the critical threshold.
+      Robustness = distance margin above threshold (negative = violation).
+
+      '
+    intervention: emergency
+    name: minimum_separation
+    params:
+      clearance_critical: 3.0
+      closing_gate: 0.5
+      motion_gate: 1.2
+      proximity_emergency: 1.8
+      v_veh_floor: 0.5
+    rho_expr: d_min - {clearance_critical}
+    track: arithmetic
+  phi2:
+    description: "Vehicles must reduce speed when any pedestrian is within the proximity\
+      \ zone. Memoryless \u2014 evaluated each timestep independently.\n"
+    intervention: warning
+    name: speed_proximity_coupling
+    params:
+      proximity_zone: 5.0
+      speed_limit_slow: 1.4
+    rho_expr: max(d_min - {proximity_zone}, {speed_limit_slow} - v_veh_max)
+    track: arithmetic
+  phi3:
+    description: "Novel contribution: uses trajectory-predicted d_pred as the STL\
+      \ signal. Direct arithmetic \u2014 d_pred is already a future-looking quantity\
+      \ so no temporal window needed. Robustness = predicted clearance margin.\n"
+    intervention: predictive_warning
+    name: predictive_near_miss
+    params:
+      warning_horizon: 3.0
+    rho_expr: d_pred - {warning_horizon}
+    track: arithmetic
+  phi4:
+    description: 'If vehicle is within emergency distance NOW, it must have reached
+      near-stop at some point in the last stop_window steps. Pattern from PhD paper:
+      antecedent implies once[0,N](consequent).
+
+      '
+    intervention: emergency
+    name: emergency_stop_compliance
+    params:
+      clearance_emergency: 1.0
+      speed_stopped: 0.1
+      stop_window: 60
+    stl: (d_min < {clearance_emergency}) implies once[0,{stop_window}](v_veh_max <
+      {speed_stopped})
+    track: rtamt
+  phi5:
+    description: 'If an alert is currently active, the zone must have achieved safe
+      clearance at some point in the last clearance_timeout steps.
+
+      '
+    intervention: monitor
+    name: post_alert_clearance
+    params:
+      clearance_safe: 2.5
+      clearance_timeout: 450
+    stl: (alert_active > 0.5) implies once[0,{clearance_timeout}](d_min > {clearance_safe})
+    track: rtamt
+update_source: local
+version: '1.0'
+zone:
+  x_max: 8.0
+  x_min: -8.0
+  y_max: 12.0
+  y_min: 0.0
+  z_clip: 3.0

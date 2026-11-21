@@ -11,6 +11,10 @@
   header h1 { font-size:1rem; font-weight:600; letter-spacing:.05em; color:#58a6ff; white-space:nowrap; }
   .chan { display:flex; align-items:center; gap:6px; font-size:.66rem; color:#8b949e; text-transform:uppercase; letter-spacing:.08em; }
   .badge { padding:4px 11px; border-radius:12px; font-size:.72rem; font-weight:700; letter-spacing:.08em; background:#3d4148; color:#fff; transition:background .2s; min-width:92px; text-align:center; }
+  .badge .sub { text-transform:none; letter-spacing:0; font-weight:500; }
+  .hold-msg { display:none; font-size:.72rem; line-height:1.45; color:#e6edf3; background:#2a1f0e; border-left:3px solid #ff9800; border-radius:3px; padding:6px 9px; margin-bottom:10px; }
+  .hold-msg.on { display:block; }
+  .hold-msg b { color:#ffb74d; font-weight:600; font-variant-numeric:tabular-nums; }
   #clip-badge { font-size:.68rem; color:#8b949e; border:1px solid #30363d; border-radius:10px; padding:3px 9px; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
   main { display:grid; grid-template-columns:1fr 360px; grid-template-rows:minmax(0,1fr) 260px; gap:1px; background:#30363d; overflow:hidden; }
@@ -110,6 +114,8 @@
   <section id="side">
     <div class="card">
       <h2>STL monitor <small id="stl-raw">raw —</small></h2>
+      <div class="hold-msg" id="stl-hold"></div>
+      <div class="note" style="margin:0 0 6px">ρ and signals: this frame</div>
       <div class="rho-row"><div class="rho-label">φ1 Minimum Separation <span id="val-rho1">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho1"></div></div></div>
       <div class="rho-row"><div class="rho-label">φ2 Speed-Proximity <span id="val-rho2">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho2"></div></div></div>
       <div class="rho-row"><div class="rho-label">φ3 Predictive Near-Miss <span id="val-rho3">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-rho3"></div></div></div>
@@ -143,7 +149,7 @@
   </section>
 
   <section id="timeline-panel">
-    <h2>Timeline <small>click to seek · lanes: STL shown · STL raw · ŝ (line at τ) · V-JEPA · fused</small></h2>
+    <h2>Timeline <small>click to seek · lanes: STL shown (dimmed half = hold) · STL raw · ŝ (line at τ) · V-JEPA · fused</small></h2>
     <canvas id="timeline"></canvas>
   </section>
 
@@ -184,6 +190,25 @@ function updateRho(id, v){ $("val-"+id).textContent = v==null ? "n/a" : v.toFixe
 function badge(id, lvl, none="NO DATA"){ const b=$(id);
   if(lvl==null){ b.textContent=none; b.style.background="#3d4148"; b.style.color="#fff"; return; }
   b.textContent=LEVEL_LABELS[lvl]; b.style.background=LEVEL_COLOURS[lvl]; b.style.color=lvl<=1?"#000":"#fff"; }
+// Re-run the edge loop's hysteresis to know, per frame, whether the shown level
+// is waiting on a pending change and for how long. Mirrors
+// InterventionEngine.process: a new raw level must persist for upgrade_hold
+// frames to raise, downgrade_hold frames to lower; any change of raw level
+// restarts the count. Checked against the engine's own output on load.
+let holdInfo = null;
+function simulateHold(){
+  const raw = D.frames.level_raw, up = D.stl.upgrade_hold, down = D.stl.downgrade_hold;
+  const n = raw.length, info = new Array(n); let cur = 0, cand = 0, cnt = 0, ok = true;
+  for(let f=0; f<n; f++){
+    const r = raw[f];
+    if(r !== cand){ cand = r; cnt = 1; } else cnt++;
+    const need = r > cur ? up : down;
+    if(cnt >= need && r !== cur) cur = r;
+    if(cur !== D.frames.level[f]) ok = false;
+    info[f] = r !== cur ? {target:r, dir: r > cur ? "up" : "down", elapsed:cnt, left:need-cnt, need} : null;
+  }
+  return ok ? info : null;
+}
 const tOf = f => f / D.clip.fps;
 const fOf = t => Math.max(0, Math.min(D.clip.n_frames-1, Math.round(t * D.clip.fps)));
 
@@ -277,6 +302,10 @@ function drawTimeline(){
     let s=0; for(let f=1; f<=n; f++){ if(f===n || arr[f]!==arr[s]){ const v=arr[s];
       if(v!=null && v>0){ c.fillStyle=LEVEL_COLOURS[v]; c.fillRect(x(s), y0, Math.max(1,x(f)-x(s)), h); } s=f; } } };
   band("STL shown", D.frames.level); band("STL raw", D.frames.level_raw);
+  if(holdInfo){ const [hy,hh] = pos["STL shown"]; c.fillStyle = "rgba(13,17,23,.55)";
+    let s0 = -1;
+    for(let f=0; f<=n; f++){ const on = f<n && holdInfo[f] && holdInfo[f].dir === "down";
+      if(on && s0 < 0) s0 = f; if(!on && s0 >= 0){ c.fillRect(x(s0), hy+hh*.5, Math.max(1,x(f)-x(s0)), hh*.5); s0 = -1; } } }
   band("V-JEPA", vjLevel); band("Fused", fused);
   // ŝ curve
   const [y0,h] = pos["ŝ"]; c.fillStyle="#8b949e"; c.fillText("ŝ = s/τ", 4, y0+h/2);
@@ -342,6 +371,18 @@ function render(){
   if(!D) return;
   const F = D.frames, f = frame;
   badge("b-stl", F.level[f]); badge("b-vj", vjLevel[f], "WARMING UP"); badge("b-fused", fused[f]);
+  const h = holdInfo && holdInfo[f], fps = D.clip.fps, sec = x => (x/fps).toFixed(1);
+  if(h && h.dir === "down"){
+    $("b-stl").innerHTML = `${LEVEL_LABELS[F.level[f]]} <span class="sub">· hold ${sec(h.left)} s</span>`;
+    $("stl-hold").innerHTML = `<b>Holding ${LEVEL_LABELS[F.level[f]]}.</b> This frame reads ${LEVEL_LABELS[h.target]} `
+      + `(for ${sec(h.elapsed)} s). The edge loop lowers an alert only after ${sec(h.need)} s of lower readings, `
+      + `so a momentary detection dropout cannot clear it. Steps down in <b>${sec(h.left)} s</b>.`;
+  } else if(h){
+    $("b-stl").innerHTML = `${LEVEL_LABELS[F.level[f]]} <span class="sub">· confirming</span>`;
+    $("stl-hold").innerHTML = `<b>Confirming ${LEVEL_LABELS[h.target]}.</b> This frame reads ${LEVEL_LABELS[h.target]}; `
+      + `the edge loop raises after ${h.need} consecutive frames (${sec(h.need)} s). Raises in <b>${sec(h.left)} s</b>.`;
+  }
+  $("stl-hold").classList.toggle("on", !!h);
   ["rho1","rho2","rho3","rho4","rho5"].forEach(k => updateRho(k, F[k][f]));
   $("sig-dmin").textContent = fx(F.d_min[f]); $("sig-vveh").textContent = fx(F.v_veh_max[f]);
   $("sig-vcl").textContent = fx(F.v_closing[f]); $("sig-dpred").textContent = fx(F.d_pred[f]);
@@ -418,7 +459,9 @@ function loadData(d){
   $("run").innerHTML = D.runs.map((r,i) => `<option value="${i}">${r.name} (${r.id})</option>`).join("");
   $("run").onchange = e => selectRun(+e.target.value);
   $("hold").onchange = e => { hold = +e.target.value; recompute(); render(); };
-  $("stl-note").textContent = `Level after the edge loop's hysteresis (raise after ${D.stl.upgrade_hold} frames, lower after ${D.stl.downgrade_hold}), as the live dashboard showed it.`;
+  holdInfo = simulateHold();
+  $("stl-note").textContent = `Badge: level after the edge loop's hysteresis (raise after ${D.stl.upgrade_hold} frames, lower after ${D.stl.downgrade_hold} = ${(D.stl.downgrade_hold/D.clip.fps).toFixed(1)} s), as the live dashboard showed it.`
+    + (holdInfo ? "" : " Hold countdown unavailable: the hysteresis replay does not match this file's levels.");
   $("clip-badge").textContent = `replay · ${D.clip.file || D.clip.trace} · ${D.clip.n_frames} frames @ ${D.clip.fps} fps`;
   fitStage(); selectRun(0);
   if(Q.get("t")) seek(fOf(+Q.get("t")));

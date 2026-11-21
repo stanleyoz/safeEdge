@@ -119,6 +119,9 @@ device. The paper needs consent or anonymisation before any frame is published.
 
 ## Replay dashboard: STL vs V-JEPA 2.1
 
+Full run instructions, controls and live-dashboard ports:
+[`docs/REPLAY_DASHBOARD.md`](../../docs/REPLAY_DASHBOARD.md).
+
 `dashboard/static/compare.html` is a fork of the live dashboard for replays.
 For one clip it shows three channels: the STL level as the live dashboard
 showed it (raw level through the edge loop's `InterventionEngine`, holds 3/23),
