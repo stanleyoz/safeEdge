@@ -26,6 +26,7 @@ established.
 | `scripts/make_synthetic_clip.py` | Synthetic clip + trace for smoke tests (plumbing only) |
 | `results/<run>/` | `summary.json`, `surprise.csv` (per window), `maps.npy` (24×24 surprise maps), `plot.png` |
 | `results/traces/` | Geometric trace of the evaluated clip |
+| `results/compare/` | Packed clip data for the STL-vs-V-JEPA replay dashboard (`../../dashboard/static/compare.html`), built by `../../tools/build_compare_data.py` |
 | `results/table.md`, `table.json` | The tables below (frame-level and region-pooled), as generated |
 | `session/` | Staged near-miss session: `STAGED_SESSION_PLAN.md`, randomised `run_sheet.csv`, its generator |
 | `paper/` | LaTeX draft (`main.tex`, `references.bib`, `figures/`). `make` builds `main.pdf` in the `texlive/texlive` Docker image; `make arxiv` packages the upload |
@@ -115,3 +116,32 @@ device. The paper needs consent or anonymisation before any frame is published.
 - [ ] ViT-B ridge latency on the Orin NX (FP16/TensorRT)
 - [ ] φ6/φ7 in shadow mode on the live unit
 - [ ] Verify `paper/references.bib` entries; fill paper TODOs
+
+## Replay dashboard: STL vs V-JEPA 2.1
+
+`dashboard/static/compare.html` is a fork of the live dashboard for replays.
+For one clip it shows three channels: the STL level as the live dashboard
+showed it (raw level through the edge loop's `InterventionEngine`, holds 3/23),
+a V-JEPA level (WARNING when ŝ = score/τ stays above 1 for a chosen number of
+windows), and the fused level max(STL, V-JEPA). V-JEPA can only tighten: it has
+no notion of distance, so it never raises EMERGENCY or lowers STL. Boxes,
+the 24 × 24 surprise map, a lane timeline and a merged event log (with each
+V-JEPA alert's lead over the next STL WARNING+) are drawn on top.
+
+```bash
+# browsers cannot play OpenCV mp4v captures: make an H.264 copy at the true fps
+ffmpeg -r 7.7 -i data/segment_0455_to_end.mp4 -c:v libx264 -crf 23 -pix_fmt yuv420p \
+    -movflags +faststart -an data/segment_0455_to_end.h264.mp4
+python tools/build_compare_data.py \
+    --trace research/vjepa-surprise/results/traces/segment_0455_to_end.trace.jsonl \
+    --fps 7.7 --video data/segment_0455_to_end.h264.mp4 --downgrade-hold 23 \
+    --out research/vjepa-surprise/results/compare/segment_0455_to_end.json \
+    research/vjepa-surprise/results/{vitg_predictor,vitb_ridge_crossseason,framediff}
+python -m http.server 8000      # from the repo root
+# open http://localhost:8000/dashboard/static/compare.html  (?t=128 jumps to a time)
+```
+
+The video is read from `data/` (git-ignored) and never leaves the machine;
+without it the page still runs on a blank frame. ViT-g scored at 268 ms per
+window on an RTX 4090, inside the 0.5 s stride, so a live version is plausible
+on a desktop GPU but not on the Orin NX.

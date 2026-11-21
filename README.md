@@ -158,6 +158,7 @@ qwen_cloud/
 │   └── .env.example
 │
 ├── dashboard/static/index.html # Live UI (served by the backend)
+├── dashboard/static/compare.html # Replay: STL vs V-JEPA 2.1 alerts on one clip (see research/vjepa-surprise)
 │
 ├── deploy/                     # ── Alibaba Cloud deployment ──
 │   ├── s.yaml                  # Serverless Devs (Function Compute 3.0) manifest
@@ -170,6 +171,7 @@ qwen_cloud/
 │   ├── live_record.py          # USB cam/D455 + GPU YOLO + distance annotations → MP4
 │   ├── benchmark_detector.py   # Model/threshold sweep on a captured clip
 │   ├── capture_video.py        # USB cam/D455 recorder
+│   ├── build_compare_data.py   # Trace + V-JEPA runs → JSON for dashboard/static/compare.html
 │   ├── calibrate_homography.py # 4-point ground calibration (webcam mode)
 │   ├── test_backend.py         # Local backend smoke test (live Qwen if key set)
 │   ├── docker_*.sh             # Jetson GPU container runners (see §8)
