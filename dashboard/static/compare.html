@@ -52,7 +52,7 @@
   .note b { color:#8b949e; font-weight:600; }
 
   #timeline-panel { position:relative; }
-  #timeline { width:100%; height:calc(100% - 22px); display:block; cursor:crosshair; }
+  #timeline { width:100%; height:calc(100% - 22px); display:block; cursor:ew-resize; touch-action:none; }
   #events-panel { display:flex; flex-direction:column; }
   #events { overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:4px; }
   .ev { font-size:.7rem; padding:4px 8px; border-radius:3px; border-left:3px solid #30363d; background:#161b22; display:flex; gap:8px; cursor:pointer; }
@@ -149,7 +149,7 @@
   </section>
 
   <section id="timeline-panel">
-    <h2>Timeline <small>click to seek · lanes: STL shown (dimmed half = hold) · STL raw · ŝ (line at τ) · V-JEPA · fused</small></h2>
+    <h2>Timeline <small>click or drag to scrub · lanes: STL shown (dimmed half = hold) · STL raw · ŝ (line at τ) · V-JEPA · fused</small></h2>
     <canvas id="timeline"></canvas>
   </section>
 
@@ -326,8 +326,21 @@ function drawTimeline(){
   c.strokeStyle="#e6edf3"; c.beginPath(); c.moveTo(x(frame),0); c.lineTo(x(frame),H-12); c.stroke();
   tl._map = {L, w, n};
 }
-tl.addEventListener("click", e => { if(!D) return; const {L,w,n} = tl._map, r = tl.getBoundingClientRect();
-  seek(Math.round(Math.max(0, Math.min(1, (e.clientX - r.left - L)/w)) * (n-1))); });
+// Click or drag (scrub) the timeline. Pointer capture keeps the drag alive
+// outside the canvas; seeks are coalesced to one per animation frame so the
+// video decoder is not flooded while scrubbing.
+let scrubbing = false, scrubTarget = null;
+const frameAtX = clientX => { const {L,w,n} = tl._map, r = tl.getBoundingClientRect();
+  return Math.round(Math.max(0, Math.min(1, (clientX - r.left - L)/w)) * (n-1)); };
+function scrubTo(f){
+  if(scrubTarget === null) requestAnimationFrame(() => { if(scrubTarget !== null && scrubTarget !== frame) seek(scrubTarget); scrubTarget = null; });
+  scrubTarget = f;
+}
+tl.addEventListener("pointerdown", e => { if(!D || !tl._map) return;
+  scrubbing = true; tl.setPointerCapture(e.pointerId); setPlaying(false); scrubTo(frameAtX(e.clientX)); });
+tl.addEventListener("pointermove", e => { if(scrubbing) scrubTo(frameAtX(e.clientX)); });
+const endScrub = e => { if(!scrubbing) return; scrubbing = false; tl.releasePointerCapture(e.pointerId); seek(frameAtX(e.clientX)); };
+tl.addEventListener("pointerup", endScrub); tl.addEventListener("pointercancel", endScrub);
 
 // ── overlay ────────────────────────────────────────────────────────────────
 const INFERNO = [[0,0,4],[40,11,84],[101,21,110],[159,42,99],[212,72,66],[245,125,21],[250,193,39],[252,255,164]];

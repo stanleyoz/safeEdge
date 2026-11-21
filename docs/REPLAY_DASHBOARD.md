@@ -37,7 +37,7 @@ button, the file pickers, or by dragging files onto the page.
 | --- | --- |
 | Play / pause | **Play** button or Space (1× is real time) |
 | Step one frame | **−1 f** / **+1 f** or Left / Right arrow |
-| Jump to a time | Click the timeline or an event-log entry, or add `?t=<seconds>` to the URL |
+| Jump to a time | Click or drag (scrub) along the timeline, click an event-log entry, or add `?t=<seconds>` to the URL |
 | Change scorer | V-JEPA panel: ViT-g predictor, ViT-B + ridge, or the pixel frame-difference baseline |
 | Change alert hold | V-JEPA panel: windows ŝ must stay above 1 before V-JEPA raises WARNING (default 2, about 1 s) |
 | Overlays | **boxes** and **surprise map** checkboxes |

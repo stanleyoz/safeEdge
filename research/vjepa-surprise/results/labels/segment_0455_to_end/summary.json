@@ -1,0 +1,43 @@
+{
+ "trace": "segment_0455_to_end.trace.jsonl",
+ "fps": 7.7,
+ "n_frames": 2244,
+ "crop_box": [
+  0,
+  375,
+  1280,
+  580
+ ],
+ "grid": 24,
+ "params": {
+  "fps": 7.7,
+  "d_conflict": 1.8,
+  "closing_gate": 0.5,
+  "v_move": 0.5,
+  "vel_window_s": 1.0,
+  "require_vehicle_motion": false,
+  "max_speed": 6.0,
+  "k_frames": 8
+ },
+ "horizons": [
+  1.0,
+  2.0,
+  3.0
+ ],
+ "windows": {
+  "n": 576,
+  "source": "research/vjepa-surprise/results/vitg_predictor",
+  "ongoing": 55,
+  "onset_within": {
+   "1s": 25,
+   "2s": 41,
+   "3s": 57
+  }
+ },
+ "events": {
+  "n": 12,
+  "vehicle_moving": 5,
+  "conflict_frames": 139,
+  "cv_anticipated": 4
+ }
+}

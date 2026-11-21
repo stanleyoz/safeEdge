@@ -148,3 +148,66 @@ The video is read from `data/` (git-ignored) and never leaves the machine;
 without it the page still runs on a blank frame. ViT-g scored at 268 ms per
 window on an RTX 4090, inside the 0.5 s stride, so a live version is plausible
 on a desktop GPU but not on the Orin NX.
+
+## Conflict forecasting: self-labelling pipeline
+
+Next direction: a small head on frozen V-JEPA 2.1 features that predicts
+*where* a pedestrian-vehicle conflict will happen 1-3 s ahead (a risk map on
+the 24 x 24 patch grid, thresholded into a box), compared against
+constant-velocity extrapolation of the tracks (the phi3-style forecast). The
+encoder is not retrained; as with V-JEPA 2-AC's 62 h robot post-training, only
+a small head learns from domain data.
+
+`tools/conflict_labels.py` makes that domain data from footage SafeEdge has
+already replayed: it reads a `--trace`, finds conflicts (pair closer than
+1.8 m and converging faster than 0.5 m/s or the vehicle moving: the shape of
+the STL EMERGENCY rule), and writes per-window targets aligned with a
+`vjepa_surprise.py` run (`target`, `onset` vs `ongoing`, and the
+constant-velocity forecast `cv_pred`) to `labels.npz`, plus `events.json`,
+`summary.json`, a timeline plot and, with `--review-video`, a three-frames-per-
+event sheet for a human check (kept local: it shows people).
+`tests/test_conflict_labels.py` covers it on synthetic traces.
+
+```bash
+python tools/conflict_labels.py \
+    --trace research/vjepa-surprise/results/traces/segment_0455_to_end.trace.jsonl \
+    --fps 7.7 --windows-from research/vjepa-surprise/results/vitg_predictor \
+    --plot --review-video data/segment_0455_to_end.mp4 \
+    --out research/vjepa-surprise/results/labels/segment_0455_to_end
+```
+
+On the July clip it finds 12 conflict events; 41 windows have an onset within
+2 s, and the constant-velocity forecast is ahead of onset on 4 of the 12.
+What it taught us about labelling this camera:
+
+- **Track-ID switches look like motion.** Per-frame ground steps are bimodal:
+  real motion stays under 0.3 m per frame, while 722 car steps (and 27
+  pedestrian steps) jump 1-16 m when the tracker hands an id to another car.
+  Speeds now come from net displacement over 1 s within the unbroken part of a
+  track; a step faster than 6 m/s breaks it.
+- **Vehicle motion is not separable yet.** With the compressed homography a
+  car really driving (E3, 77 s) reads about 0.5 m/s, the same as parked-car
+  jitter on new or far-row tracks, and box-based pixel speed is corrupted by
+  pedestrians occluding parked cars. `vehicle_moving` is therefore evidence for
+  review, not ground truth, until the homography is recalibrated.
+- **Nearest-pair labels can miss the real hazard.** At 74-81 s the pedestrian
+  is nearest a parked car, so the moving car crossing the lane is never paired.
+
+Labels at scale therefore need, in order: the homography recalibrated,
+continuous timestamped recording, and the review sheet spot-checked.
+
+### Data beyond our own camera
+
+| Source | What it gives | Status |
+| --- | --- | --- |
+| Own footage, self-labelled | In-domain conflicts, this camera, this site | Pipeline ready; needs recording + homography |
+| Staged session | Ground-truth timings by design | Held-out test set (pre-registered) |
+| MEVA (Kitware/IARPA) | ~330 h of ground-camera video, persons and vehicles outdoors, scripted actors, JSON activity annotations, camera models; CC BY 4.0 (privacy and publicity rights excluded by clause 2(b)(1)); public S3 bucket `mevadata-public-01` | Verified from registry.opendata.aws and mevadata.org; parking-lot camera views and activity list not yet checked |
+| VIRAT Ground 2.0 | Static cameras over parking lots and roads, person and vehicle tracks and events, reported CC BY 4.0, zipped on Kitware's data server | Reported by search results only; the Kitware pages could not be fetched here, so verify size, scenes and terms by hand |
+| Simulation (CARLA) + NVIDIA Cosmos-Transfer | Thousands of scripted, varied conflicts from a fixed CCTV pose, including ones too dangerous to stage, with exact ground truth from the simulator; Cosmos-Transfer restyles them photoreal while keeping alignment (NVIDIA's smart-city recipe does CARLA to Cosmos-Transfer) | To evaluate |
+| Text-to-video generation | Unlimited variety | Not for training: no ground truth, physics errors concentrated in exactly the interaction that matters, and the model would learn the generator's artefacts. At most a qualitative stress test |
+
+Public datasets have few genuine near-misses (scripted activities, not
+conflicts); their value is the variety of normal pedestrian-vehicle behaviour
+around parked cars. Conflicts themselves come from our footage, the staged
+session and simulation.
