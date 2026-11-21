@@ -10,6 +10,26 @@ zone:
   y_max: 12.0
   z_clip: 3.0   # ignore objects above 3m (birds, branches)
 
+# ── Signal extraction ───────────────────────────────────────────────────────
+# How vehicle motion is measured before the specs see it. With a calibrated
+# homography (docs/calibration/), a few pixels of box jitter on a parked car
+# in the far row read as 0.5-1.2 m/s, and the original settings (speed from a
+# 6-frame estimate, the fastest vehicle anywhere in view, mutual closing
+# speed) put pedestrians beside parked cars into EMERGENCY. Measured on the
+# July clip and on synthetic approaches with tools/replay_stl.py: these
+# settings remove every false EMERGENCY there and keep EMERGENCY latency
+# unchanged for a car driving at, or pulling out beside, a pedestrian.
+# Omit the section (or use the commented values) for the original behaviour.
+signals:
+  speed_window_s: 1.0       # vehicle speed from net displacement over this window,
+                            # within the unbroken track (null: 6-frame estimate)
+  max_speed: 6.0            # m/s; a faster step is a track-ID switch, not motion
+  vehicle_scope: near       # near: only vehicles within near_radius_m of a
+                            # pedestrian count for v_veh_max (all: any vehicle)
+  near_radius_m: 5.0        # = phi2 proximity_zone
+  closing_mode: vehicle     # vehicle: the vehicle's own approach towards the
+                            # pedestrian (mutual: includes the pedestrian walking)
+
 # ── SPEC LIBRARY ────────────────────────────────────────────────────────────
 # stl: template string — {param_name} replaced at runtime
 # track: "arithmetic" (memoryless, runs in actuator path)
@@ -29,15 +49,17 @@ specs:
                                 # closing_gate; kept for reference/back-compat)
       proximity_emergency: 1.8  # metres — EMERGENCY only when d_min below this AND
                                 # the pair is converging (see closing_gate)
-      closing_gate: 0.5         # m/s — radial closing speed above which the
-                                # pedestrian+vehicle count as "going towards each
-                                # other"; below = parked/tangential → not emergency
+      closing_gate: 0.5         # m/s — closing speed above which the pair counts
+                                # as converging (signals.closing_mode: the vehicle's
+                                # own approach, or the mutual closing); below =
+                                # parked/tangential → not emergency
       v_veh_floor: 0.5          # m/s — recall floor: within proximity_emergency,
                                 # a moving vehicle ALONE (v_veh_max) also triggers
                                 # EMERGENCY even if the noisy closing signal
-                                # transiently reads below closing_gate. Deliberately
-                                # overlaps static-car jitter — a missed emergency is
-                                # worse than a false alarm.
+                                # transiently reads below closing_gate. With
+                                # signals.vehicle_scope near and the 1 s speed window,
+                                # parked-car jitter rarely reaches it; a missed
+                                # emergency is still worse than a false alarm.
     intervention: emergency
 
   phi2:

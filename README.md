@@ -173,6 +173,8 @@ qwen_cloud/
 │   ├── benchmark_detector.py   # Model/threshold sweep on a captured clip
 │   ├── capture_video.py        # USB cam/D455 recorder
 │   ├── build_compare_data.py   # Trace + V-JEPA runs → JSON for dashboard/static/compare.html
+│   ├── replay_stl.py           # Re-run signals + STL + hysteresis on a recorded trace (seconds, no detector)
+│   ├── check_homography.py     # Fit and check the camera calibration from map landmarks
 │   ├── calibrate_homography.py # 4-point ground calibration (webcam mode)
 │   ├── test_backend.py         # Local backend smoke test (live Qwen if key set)
 │   ├── docker_*.sh             # Jetson GPU container runners (see §8)

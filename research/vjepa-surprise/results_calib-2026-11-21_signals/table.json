@@ -1,0 +1,352 @@
+[
+  {
+    "run": "framediff",
+    "mode": "framediff",
+    "model": null,
+    "ms_per_window": 6.863979855552316,
+    "warning_plus_detected": "1/9",
+    "false_alarm_runs": 0,
+    "full": {
+      "concurrent": 0.873623670212766,
+      "antic_2s": 0.5352868112014454,
+      "antic_2s_ci": [
+        0.3943198026666104,
+        0.6707504144884874
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.5493564913157566,
+      "antic_4s_ci": [
+        0.4046190756449955,
+        0.6984386811623653
+      ],
+      "antic_4s_pos": 53
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.8949800531914893,
+      "antic_2s": 0.5926490514905149,
+      "antic_2s_ci": [
+        0.43670520029092535,
+        0.7674691725799971
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.581000874671998,
+      "antic_4s_ci": [
+        0.4473254441998405,
+        0.7401177027509045
+      ],
+      "antic_4s_pos": 53
+    },
+    "pair": {
+      "concurrent": 0.8672207446808511,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 53,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.8825398936170212,
+      "antic_2s": 0.5240514905149052,
+      "antic_2s_ci": [
+        0.3958994668651181,
+        0.6354747525596192
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.5274272147944521,
+      "antic_4s_ci": [
+        0.39791324432909986,
+        0.6426048384788875
+      ],
+      "antic_4s_pos": 53,
+      "windows_with_region": 567
+    }
+  },
+  {
+    "run": "vitb_persistence",
+    "mode": "persistence",
+    "model": "base",
+    "ms_per_window": 39.567502681165934,
+    "warning_plus_detected": "3/9",
+    "false_alarm_runs": 1,
+    "full": {
+      "concurrent": 0.8300398936170212,
+      "antic_2s": 0.5078477868112015,
+      "antic_2s_ci": [
+        0.3235460991475636,
+        0.6912610823167102
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.4795701611895539,
+      "antic_4s_ci": [
+        0.36932218507909564,
+        0.6065577412833438
+      ],
+      "antic_4s_pos": 53
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.8560771276595744,
+      "antic_2s": 0.6516485998193315,
+      "antic_2s_ci": [
+        0.48884752554711525,
+        0.8152374248247394
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.575096838685493,
+      "antic_4s_ci": [
+        0.46475670608581965,
+        0.6974681949278606
+      ],
+      "antic_4s_pos": 53
+    },
+    "pair": {
+      "concurrent": 0.8658244680851064,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 53,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.8910771276595745,
+      "antic_2s": 0.5107271906052394,
+      "antic_2s_ci": [
+        0.38060212663488524,
+        0.616038804108922
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.5223666125203049,
+      "antic_4s_ci": [
+        0.4461649997453927,
+        0.5848861346255027
+      ],
+      "antic_4s_pos": 53,
+      "windows_with_region": 567
+    }
+  },
+  {
+    "run": "vitb_ridge_inclip",
+    "mode": "ridge",
+    "model": "base",
+    "ms_per_window": 39.64909305796027,
+    "warning_plus_detected": "7/9",
+    "false_alarm_runs": 8,
+    "full": {
+      "concurrent": 0.9539824120603015,
+      "antic_2s": 0.8017241379310345,
+      "antic_2s_ci": [
+        0.7710843373493976,
+        0.8280346820809249
+      ],
+      "antic_2s_pos": 4,
+      "antic_4s": 0.5926470588235294,
+      "antic_4s_ci": [
+        0.5433006535947712,
+        0.6278195488721805
+      ],
+      "antic_4s_pos": 8
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.9543969849246231,
+      "antic_2s": 0.7830459770114943,
+      "antic_2s_ci": [
+        0.7537201469687691,
+        0.8063583815028902
+      ],
+      "antic_2s_pos": 4,
+      "antic_4s": 0.65,
+      "antic_4s_ci": [
+        0.5907643312101911,
+        0.6958820662768032
+      ],
+      "antic_4s_pos": 8
+    },
+    "pair": {
+      "concurrent": 0.8612060301507538,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 4,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 8,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.9358542713567839,
+      "antic_2s": 0.5933908045977011,
+      "antic_2s_ci": [
+        0.5434782608695652,
+        0.6454464285714286
+      ],
+      "antic_2s_pos": 4,
+      "antic_4s": 0.6095588235294118,
+      "antic_4s_ci": [
+        0.566231343283582,
+        0.6757352941176471
+      ],
+      "antic_4s_pos": 8,
+      "windows_with_region": 567
+    }
+  },
+  {
+    "run": "vitb_ridge_crossseason",
+    "mode": "ridge",
+    "model": "base",
+    "ms_per_window": 39.5680945366621,
+    "warning_plus_detected": "1/9",
+    "false_alarm_runs": 1,
+    "full": {
+      "concurrent": 0.867406914893617,
+      "antic_2s": 0.6690379403794038,
+      "antic_2s_ci": [
+        0.5456095279809142,
+        0.7931523428052096
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.5920904660752218,
+      "antic_4s_ci": [
+        0.4904199405356858,
+        0.6777626026471484
+      ],
+      "antic_4s_pos": 53
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.8805984042553191,
+      "antic_2s": 0.6684168925022583,
+      "antic_2s_ci": [
+        0.5564127853352511,
+        0.8157848288377274
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.6171748094464575,
+      "antic_4s_ci": [
+        0.513726544877532,
+        0.7439078861693431
+      ],
+      "antic_4s_pos": 53
+    },
+    "pair": {
+      "concurrent": 0.8655718085106383,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 53,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.8873271276595744,
+      "antic_2s": 0.5722673893405601,
+      "antic_2s_ci": [
+        0.4572111902346102,
+        0.6773879682513823
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.586405098088217,
+      "antic_4s_ci": [
+        0.4881615529532928,
+        0.6787598039215686
+      ],
+      "antic_4s_pos": 53,
+      "windows_with_region": 567
+    }
+  },
+  {
+    "run": "vitg_predictor",
+    "mode": "predictor",
+    "model": "giant",
+    "ms_per_window": 268.4061590116471,
+    "warning_plus_detected": "3/9",
+    "false_alarm_runs": 2,
+    "full": {
+      "concurrent": 0.8821409574468085,
+      "antic_2s": 0.686596657633243,
+      "antic_2s_ci": [
+        0.5528138280638281,
+        0.8401481220346082
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.642102961389479,
+      "antic_4s_ci": [
+        0.4842196341928501,
+        0.8181214104725286
+      ],
+      "antic_4s_pos": 53
+    },
+    "far_rows_0_7": {
+      "concurrent": 0.8641954787234043,
+      "antic_2s": 0.7077687443541102,
+      "antic_2s_ci": [
+        0.5735793511234992,
+        0.8735849866198641
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.6542858927902037,
+      "antic_4s_ci": [
+        0.5113563601474523,
+        0.8221526757691324
+      ],
+      "antic_4s_pos": 53
+    },
+    "pair": {
+      "concurrent": 0.8644414893617022,
+      "antic_2s": 0.5,
+      "antic_2s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.5,
+      "antic_4s_ci": [
+        0.5,
+        0.5
+      ],
+      "antic_4s_pos": 53,
+      "windows_with_region": 153
+    },
+    "actors": {
+      "concurrent": 0.8641289893617021,
+      "antic_2s": 0.6247177055103884,
+      "antic_2s_ci": [
+        0.4871156883375014,
+        0.7486004961428393
+      ],
+      "antic_2s_pos": 27,
+      "antic_4s": 0.5968386854929402,
+      "antic_4s_ci": [
+        0.47827611967479716,
+        0.6917576305681578
+      ],
+      "antic_4s_pos": 53,
+      "windows_with_region": 567
+    }
+  }
+]

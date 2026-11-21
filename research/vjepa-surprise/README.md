@@ -263,3 +263,47 @@ Two STL problems follow, both for the edge loop rather than the calibration:
 
 Until then, the 21 Nov labels are interim: they fix the geometry but inherit
 the speed jitter.
+
+## STL signal fix (21 Nov 2026)
+
+`config/stl_specs.yaml` gains a `signals:` section read by the edge loop
+(`edge/detection/signal_extractor.py`), and `tools/replay_stl.py` re-runs the
+safety layer (extractor, predictor, STL, hysteresis) on a recorded trace in
+about a second, reproducing the recorded levels in 99.3-99.96 % of frames
+(boxes are stored to 0.1 px). Each change was measured with it on the July
+clip against the forensic ground truth, and on synthetic approaches in
+`tests/test_signal_motion.py`:
+
+| Setting | Original | New | Why |
+| --- | --- | --- | --- |
+| Vehicle speed | 6-frame estimate | net displacement over 1 s, track broken at any step faster than 6 m/s | ID switches and jitter stop reading as motion; 2 s halves jitter further but adds about 0.4 s of EMERGENCY latency for a car pulling out, so 1 s |
+| `v_veh_max` scope | every vehicle in view | vehicles within 5 m of a pedestrian | a far-row car's jitter no longer speaks for the car beside the pedestrian |
+| Closing for the EMERGENCY gate | mutual (includes the pedestrian walking) | the vehicle's own approach | walking up to a parked car is a WARNING, as the code always intended; mutual closing was a workaround for the July homography under-measuring vehicle approach |
+
+Recall is unchanged on synthetic cases: a car driving at a standing
+pedestrian at 1-4 m/s raises EMERGENCY on the first frame inside 1.8 m (the
+original settings lagged 0.9 s at 4 m/s), and a car pulling out beside one is
+flagged 0.45-0.58 s after it starts moving, as before.
+
+Full pipeline re-run with the calibration and the new settings
+(`results_calib-2026-11-21_signals/`):
+
+| Replay of segment_0455_to_end | Calibration only | Calibration + signal fix |
+| --- | --- | --- |
+| Time at EMERGENCY | 7.4 % | 0 % |
+| EMERGENCY onsets | 3 (E1, E2 beside parked cars; E7) | 0 |
+| Pair frames with closing above 0.5 m/s | 33 % | 3 % |
+| E6, SUV pulling out beside a pedestrian | AWARENESS | WARNING |
+| Every other July episode | WARNING / EMERGENCY | WARNING |
+| ViT-g anticipation 2 s | 0.689 [0.56, 0.84] | 0.687 [0.55, 0.84] |
+
+No July episode was an emergency in true metres (the closest a moving vehicle
+came to a pedestrian was 3.9 m), so all eight are now WARNING. The spec still
+puts any pedestrian within 4 m of a car at WARNING, parked or not; telling a
+pedestrian beside a moving car from one beside a parked car is a spec
+decision, not a signal fix, and is left open.
+
+Known gaps: `tests/test_stl_monitor.py` has four failures that predate this
+change (it expects `clearance_critical: 1.5`; the config has used 3.0 since
+the July tuning). `tools/conflict_labels.py` still uses mutual closing in its
+own conflict rule.

@@ -45,6 +45,14 @@ class SignalBundle:
     vehicles: list[TrackedObject]
 
 
+def extractor_options(stl_cfg: dict) -> dict:
+    """SignalExtractor keyword arguments from the `signals` section of
+    stl_specs.yaml; an absent section keeps the original behaviour."""
+    sig = (stl_cfg or {}).get("signals") or {}
+    keys = ("speed_window_s", "max_speed", "vehicle_scope", "near_radius_m", "closing_mode")
+    return {k: sig[k] for k in keys if k in sig}
+
+
 class SignalExtractor:
     """
     Converts 2-D detections → metric (X, Z) ground positions.
@@ -64,9 +72,45 @@ class SignalExtractor:
         fps: float = 15.0,
         intrinsics: tuple[float, float, float, float] | None = None,
         vclose_smooth: int | None = None,
+        speed_window_s: float | None = None,
+        max_speed: float = 6.0,
+        vehicle_scope: str = "all",
+        near_radius_m: float = 5.0,
+        closing_mode: str = "mutual",
     ):
+        """speed_window_s, vehicle_scope and closing_mode select how vehicle
+        motion is measured (the defaults reproduce the original behaviour):
+
+          speed_window_s  None: vehicle velocity from the smoothed per-frame
+                          estimator. A number: net displacement over that
+                          window within the unbroken part of the track (a
+                          step faster than max_speed m/s is a track-ID switch
+                          and ends it); unknown (zero) until half a window of
+                          clean track exists. Parked-car box jitter averages
+                          out over ~2 s, a moving vehicle's displacement adds
+                          up.
+          vehicle_scope   "all": v_veh_max over every vehicle in view.
+                          "near": only vehicles within near_radius_m of a
+                          pedestrian, so a jittering car in the far row cannot
+                          speak for the car next to the pedestrian.
+          closing_mode    "mutual": v_closing is the pair's mutual closing
+                          speed, which includes the pedestrian's own walking.
+                          "vehicle": the vehicle's velocity towards the
+                          pedestrian only, so walking up to a parked car does
+                          not count as converging.
+        """
         self._H = homography
         self._vel_est = VelocityEstimator(history_frames, fps)
+        self._fps = fps
+        self._speed_k = None if speed_window_s is None else max(2, int(round(speed_window_s * fps)))
+        self._max_speed = max_speed
+        self._pos_hist: dict[int, dict[int, np.ndarray]] = {}
+        self._frame = 0
+        if vehicle_scope not in ("all", "near") or closing_mode not in ("mutual", "vehicle"):
+            raise ValueError(f"vehicle_scope {vehicle_scope!r} / closing_mode {closing_mode!r}")
+        self._vehicle_scope = vehicle_scope
+        self._near_radius = near_radius_m
+        self._closing_mode = closing_mode
         self._dbg_n = 0
         # Rolling-median filter on v_closing. Homography position jitter can spike
         # the nearest pair's radial velocity for a single frame on an essentially
@@ -119,6 +163,8 @@ class SignalExtractor:
             active_ids.add(det.track_id)
             self._vel_est.update(det.track_id, xyz)
             vel = self._vel_est.get_velocity(det.track_id)
+            if self._speed_k is not None and det.label in VEHICLE_LABELS:
+                vel = self._net_velocity(det.track_id, xyz)
 
             obj = TrackedObject(track_id=det.track_id, label=det.label, xyz=xyz, vel=vel)
             if det.label in PERSON_LABELS:
@@ -127,18 +173,26 @@ class SignalExtractor:
                 vehicles.append(obj)
 
         self._vel_est.prune(active_ids)
+        for k in [k for k in self._pos_hist if k not in active_ids]:
+            del self._pos_hist[k]
+        self._frame += 1
 
         d_min, v_pair_raw, veh_closing_raw = _nearest_pair_closing(pedestrians, vehicles)
-        self._vclose_hist.append(v_pair_raw)
-        # The EMERGENCY gate keys on the MUTUAL closing of the pair (v_pair) —
-        # "pedestrian and vehicle moving closer together" — median-smoothed to
-        # trim jitter flaps. This is recall-first (a missed emergency is worse
-        # than a false alarm): it fires whether the car drives at the pedestrian
-        # OR the pedestrian moves into the car's path, since monocular homography
-        # badly under-measures the car's own radial approach (veh_closing peaks
-        # ~0.2 even on a real approach). veh_closing is kept for diagnostics.
+        self._vclose_hist.append(v_pair_raw if self._closing_mode == "mutual" else veh_closing_raw)
+        # The EMERGENCY gate keys on v_closing, median-smoothed to trim jitter
+        # flaps. closing_mode "mutual" (original) is the pair's mutual closing,
+        # which also fires when a pedestrian walks up to a parked car; it was
+        # chosen because the July homography under-measured the car's own
+        # radial approach (veh_closing peaked ~0.2 on a real approach). With a
+        # calibrated homography, "vehicle" keys on the car's own approach, so a
+        # pedestrian walking up to a parked car stays a WARNING.
         v_closing = float(np.median(self._vclose_hist))
-        v_veh_max = max((float(np.linalg.norm(v.vel)) for v in vehicles), default=0.0)
+        scoped = vehicles
+        if self._vehicle_scope == "near" and pedestrians:
+            ped_pts = np.array([p.xyz[[0, 2]] for p in pedestrians])
+            scoped = [v for v in vehicles
+                      if np.linalg.norm(ped_pts - v.xyz[[0, 2]], axis=1).min() < self._near_radius]
+        v_veh_max = max((float(np.linalg.norm(v.vel)) for v in scoped), default=0.0)
 
         # Throttled depth-probe diagnostic (~1/s at 15fps) — shows which objects
         # get a valid metric position vs are dropped (e.g. beyond D455 range).
@@ -158,6 +212,27 @@ class SignalExtractor:
         )
 
     # ── Private ──────────────────────────────────────────────────────────────
+
+    def _net_velocity(self, track_id: int, xyz: np.ndarray) -> np.ndarray:
+        """Velocity from net displacement over the last speed window, within
+        the unbroken part of the track; zero until half a window exists."""
+        hist = self._pos_hist.setdefault(track_id, {})
+        f = self._frame
+        hist[f] = xyz
+        for old in [g for g in hist if g < f - self._speed_k]:
+            del hist[old]
+        g = f
+        for b in range(f - 1, f - self._speed_k - 1, -1):
+            if b not in hist:
+                continue
+            if np.linalg.norm((hist[g] - hist[b])[[0, 2]]) > self._max_speed * (g - b) / self._fps:
+                for old in [h for h in hist if h <= b]:
+                    del hist[old]                     # ID switch: the track restarts here
+                break
+            g = b
+        if f - g < max(1, self._speed_k // 2):
+            return np.zeros(3, dtype=np.float32)
+        return ((xyz - hist[g]) / ((f - g) / self._fps)).astype(np.float32)
 
     def _foot_to_ground_homography(self, bbox: np.ndarray) -> np.ndarray | None:
         """Project bbox bottom-centre through homography → [X, Z] metres."""

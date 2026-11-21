@@ -44,6 +44,8 @@ button, the file pickers, or by dragging files onto the page.
 
 The same clip replayed with the 21 Nov camera calibration is at
 `?data=../../research/vjepa-surprise/results_calib-2026-11-21/compare/segment_0455_to_end.json`.
+With the calibration and the STL signal fix (current settings):
+`?data=../../research/vjepa-surprise/results_calib-2026-11-21_signals/compare/segment_0455_to_end.json`.
 
 URL parameters: `?data=<url>` and `?video=<url>` load other files; `?t=` sets
 the start time. For example

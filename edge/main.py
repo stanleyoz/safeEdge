@@ -26,7 +26,7 @@ from edge.camera.video_source import VideoSource, MockCamera, RealSenseSource
 from edge.detection.detector import ObjectDetector
 from edge.detection.tracker import ObjectTracker
 from edge.detection.aoi import AOI
-from edge.detection.signal_extractor import SignalExtractor, mock_homography
+from edge.detection.signal_extractor import SignalExtractor, extractor_options, mock_homography
 from edge.safety.stl_monitor import STLMonitor, SignalFrame
 from edge.safety.trajectory import predict_min_distance
 from edge.safety.intervention import InterventionEngine, InterventionEvent
@@ -213,7 +213,10 @@ class SafeEdge:
         )
         logger.info("Tracker: frame_rate=%d lost_track_buffer=%d act_thresh=%.2f",
                     max(1, int(round(fps))), _track_buf, _track_act)
-        self._extractor = SignalExtractor(homography, fps=fps, intrinsics=intrinsics)
+        with open(CFG_STL) as fh:
+            _sig_opts = extractor_options(yaml.safe_load(fh))
+        self._extractor = SignalExtractor(homography, fps=fps, intrinsics=intrinsics, **_sig_opts)
+        logger.info("Signals: %s", _sig_opts or "original settings (no signals section)")
         self._stl       = STLMonitor(CFG_STL)
         # downgrade_hold acts as a sticky-hold: a level must persist lower for N
         # frames before de-escalating, so a brief detection dropout (pedestrian
