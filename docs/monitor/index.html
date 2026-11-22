@@ -22,10 +22,13 @@
   .mode button + button { border-left:1px solid #30363d; }
   #conn-dot { width:8px; height:8px; border-radius:50%; background:#6e7681; display:inline-block; margin-right:6px; }
   #conn-dot.live { background:#00c853; box-shadow:0 0 6px #00c853; }
+  #vj-dot { width:8px; height:8px; border-radius:50%; background:#6e7681; display:inline-block; margin-right:6px; }
+  #vj-dot.live { background:#d2a8ff; box-shadow:0 0 6px #d2a8ff; }
   #live-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:none; }
   body.live #video, body.live #overlay, body.live .demo-only { display:none !important; }
   body:not(.live) .live-only { display:none !important; }
-  body.live #live-img { display:block; }
+  body.live #live-img, body.live #live-ov { display:block; }
+  #live-ov { display:none; pointer-events:none; }
   #live-controls { display:flex; align-items:center; gap:8px; font-size:.74rem; color:#8b949e; }
   #live-clock { margin-left:auto; font-variant-numeric:tabular-nums; color:#e6edf3; }
   #live-events { overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:4px; }
@@ -107,6 +110,7 @@
       <video id="video" muted playsinline preload="auto"></video>
       <canvas id="overlay"></canvas>
       <img id="live-img" alt="Live camera feed from the edge device">
+      <canvas id="live-ov"></canvas>
       <div id="stage-empty">
         <div id="empty-msg">Loading…</div>
         <div></div>
@@ -114,6 +118,8 @@
     </div></div>
     <div id="live-controls" class="live-only">
       <span><span id="conn-dot"></span><span id="conn-text">connecting…</span></span>
+      <span><span id="vj-dot"></span><span id="vj-text">V-JEPA connecting…</span></span>
+      <label class="chk"><input type="checkbox" id="live-heat" checked> surprise map</label>
       <span id="live-clock"></span>
     </div>
     <div id="controls" class="demo-only">
@@ -149,20 +155,21 @@
     </div>
 
     <div class="card">
-      <h2>V-JEPA 2.1 surprise <small id="vj-win" class="demo-only">—</small></h2>
-      <p class="note live-only" style="margin-top:0"><b>Recorded footage only.</b> The world model (ViT-g, 268 ms per window on an RTX 4090) is not deployed on the edge device, so the live view shows STL alone and Fused equals STL. Switch to <b>Demo clip</b> to see V-JEPA surprise next to STL.</p>
+      <h2>V-JEPA 2.1 surprise <small id="vj-win" class="demo-only">—</small><small class="live-only">ViT-g · 3.75 s window, last 1 s scored</small></h2>
       <div class="demo-only">
       <div class="row"><select id="run"></select></div>
       <div class="row">alert when ŝ &gt; 1 for
         <select id="hold"><option value="1">1 window</option><option value="2" selected>2 windows (≈1 s)</option><option value="3">3 windows</option><option value="4">4 windows</option></select>
       </div>
+      </div>
       <div class="rho-row"><div class="rho-label">ŝ = score / τ <span id="val-shat">—</span></div><div class="rho-bar-bg"><div class="rho-bar" id="bar-shat"></div></div></div>
       <div class="sig">
         <div>score <b id="vj-s">—</b></div><div>τ <b id="vj-tau">—</b></div>
-        <div>AUROC now <b id="vj-auc">—</b></div><div>antic. 2 s <b id="vj-ant">—</b></div>
+        <div class="demo-only">AUROC now <b id="vj-auc">—</b></div><div class="demo-only">antic. 2 s <b id="vj-ant">—</b></div>
+        <div class="live-only">GPU <b id="vj-ms">—</b> ms</div><div class="live-only">delay <b id="vj-lag">—</b> s</div>
       </div>
-      <p class="note" id="vj-note"></p>
-      </div>
+      <p class="note demo-only" id="vj-note"></p>
+      <p class="note live-only">Scored live on a workstation GPU (RTX 4090) from the edge device's feed, with the drawn boxes removed first. τ is the July clip's calm-window threshold, not re-fitted on live footage, so how often it fires on an ordinary day is itself a result. Alert when ŝ &gt; 1 for <span id="vj-hold">2</span> windows (≈1 s). Each score is stamped at its window's end; it arrives about 0.5 s later.</p>
     </div>
 
     <div class="card">
@@ -172,7 +179,7 @@
   </section>
 
   <section id="timeline-panel">
-    <h2>Timeline <small class="demo-only">click or drag to scrub · lanes: STL shown (dimmed half = hold) · STL raw · ŝ (line at τ) · V-JEPA · fused</small><small class="live-only">last 2 minutes · STL level · ρ1 margin (dashed: violation)</small></h2>
+    <h2>Timeline <small class="demo-only">click or drag to scrub · lanes: STL shown (dimmed half = hold) · STL raw · ŝ (line at τ) · V-JEPA · fused</small><small class="live-only">last 2 minutes · STL level · V-JEPA ŝ, 0.8 to 1.3 (dashed: τ; shaded: alert) · ρ1 margin (dashed: violation)</small></h2>
     <canvas id="timeline"></canvas>
   </section>
 
@@ -189,10 +196,13 @@
 //              V-JEPA 2.1 surprise runs (tools/build_compare_data.py); people in
 //              the video are blurred (tools/anonymise_video.py).
 //   Live       the edge device's own dashboard feed over WebSocket (the feed
-//              the root viewer shows, tunnelled with Tailscale Funnel); STL only.
+//              the root viewer shows, tunnelled with Tailscale Funnel) for the
+//              camera and STL, plus live V-JEPA 2.1 surprise from a workstation
+//              GPU (research/vjepa-surprise/scripts/vjepa_live.py).
 //   ?mode=live|demo  start in this mode (default demo)
 //   ?t=<seconds>     demo: start at this clip time
 //   ?host=<host>     live: another SafeEdge unit
+//   ?vjhost=<host>   live: another V-JEPA scoring service (or a full ws:// URL)
 const LEVEL_COLOURS = {0:"#00c853",1:"#ffd600",2:"#ff6d00",3:"#d50000"};
 const LEVEL_LABELS  = {0:"SAFE",1:"AWARENESS",2:"WARNING",3:"EMERGENCY"};
 const RHO_MAX = 8.0, LOOKAHEAD_S = 8.0;
@@ -200,6 +210,7 @@ const Q = new URLSearchParams(location.search);
 const DEFAULT_DATA = "data/segment_0455_to_end.json";
 const DEFAULT_VIDEO = "media/segment_0455_to_end.blurred.mp4";
 const LIVE_HOST = Q.get("host") || "eliza-jetson.tail52ce98.ts.net";
+const VJ_HOST = Q.get("vjhost") || "ae4090.tail52ce98.ts.net";
 let mode = null;
 const $ = id => document.getElementById(id);
 addEventListener("error", e => { $("clip-badge").textContent = `error: ${e.message} (line ${e.lineno})`; $("clip-badge").style.color = "#ff6d00"; });
@@ -552,6 +563,7 @@ const LIVE_WINDOW_S = 120;
 let ws = null, wsTimer = null, pingTimer = null, liveHist = [];
 function liveConnect(){
   if(mode !== "live") return;
+  if(!vjWs) vjConnect();
   const sock = new WebSocket("wss://" + LIVE_HOST + "/ws"); ws = sock;
   $("conn-text").textContent = `connecting to ${LIVE_HOST}…`;
   sock.onopen = () => { if(sock !== ws) return; $("conn-dot").classList.add("live"); $("conn-text").textContent = `live · ${LIVE_HOST}`;
@@ -563,6 +575,7 @@ function liveConnect(){
   sock.onmessage = e => { if(sock === ws) onLive(JSON.parse(e.data)); };
 }
 function liveDisconnect(){
+  vjDisconnect();
   clearTimeout(wsTimer); clearInterval(pingTimer);
   const s = ws; ws = null; if(s) try { s.close(); } catch(e){}
   $("conn-dot").classList.remove("live");
@@ -576,7 +589,8 @@ function liveMessage(offline){
 function onLive(d){
   const now = Date.now();
   if(d.frame){ $("live-img").src = "data:image/jpeg;base64," + d.frame; $("stage-empty").style.display = "none"; }
-  badge("b-stl", d.level); badge("b-fused", d.level); badge("b-vj", null, "RECORDED ONLY");
+  if(d.timestamp) clockOffset = now - d.timestamp*1000;
+  stlNow = d.level; badge("b-stl", d.level); updateFused();
   const r = d.rho || {}; ["rho1","rho2","rho3","rho4","rho5"].forEach(k => updateRho(k, r[k]));
   const sg = d.signals || {};
   $("sig-dmin").textContent = fx(sg.d_min); $("sig-vveh").textContent = fx(sg.v_veh_max);
@@ -584,9 +598,97 @@ function onLive(d){
   $("stl-raw").textContent = "live"; $("stl-hold").classList.remove("on");
   $("live-clock").textContent = new Date(now).toLocaleTimeString();
   liveHist.push({t: now, level: d.level, rho1: r.rho1});
+  while(vjHist.length && vjHist[0].t < now - LIVE_WINDOW_S*1000) vjHist.shift();
   while(liveHist.length && liveHist[0].t < now - LIVE_WINDOW_S*1000) liveHist.shift();
   if(d.event) addLiveEvent(d.event, now);
   if(!onLive.raf) onLive.raf = requestAnimationFrame(() => { onLive.raf = 0; drawLiveTimeline(); });
+}
+// V-JEPA scores from the workstation service: hello (config + recent history),
+// then one message per 0.5 s window. Window times are on the Jetson's clock;
+// clockOffset (from the STL feed) puts them on this page's timeline.
+let vjWs = null, vjTimer = null, vjPing = null, vjCfg = null, vjHist = [], vjLast = null,
+    clockOffset = 0, stlNow = null;
+function vjConnect(){
+  if(mode !== "live") return;
+  const sock = new WebSocket(VJ_HOST.includes("://") ? VJ_HOST : "wss://" + VJ_HOST + "/"); vjWs = sock;
+  sock.onopen = () => { if(sock !== vjWs) return;
+    vjPing = setInterval(() => { try { sock.send("ping"); } catch(e){} }, 20000); };
+  sock.onclose = () => { clearInterval(vjPing); if(sock !== vjWs) return;
+    vjCfg = null; vjLast = null; vjStatus(false, "V-JEPA offline · retrying"); updateVj();
+    vjTimer = setTimeout(vjConnect, 5000); };
+  sock.onerror = () => {};
+  sock.onmessage = e => { if(sock === vjWs) onVj(JSON.parse(e.data)); };
+}
+function vjDisconnect(){
+  clearTimeout(vjTimer); clearInterval(vjPing);
+  const s = vjWs; vjWs = null; vjCfg = null; vjLast = null; vjHist = [];
+  if(s) try { s.close(); } catch(e){}
+  vjStatus(false, "V-JEPA connecting…");
+}
+function vjStatus(on, text){ $("vj-dot").classList.toggle("live", on); $("vj-text").textContent = text; }
+function onVj(m){
+  if(m.type === "hello"){
+    vjCfg = m; $("vj-tau").textContent = m.tau.toPrecision(4); $("vj-hold").textContent = m.hold;
+    vjHist = (m.history || []).map(h => ({t: h.t*1000 + clockOffset, shat: h.shat, alert: h.alert}));
+    vjStatus(m.upstream === "up", m.upstream === "up" ? "V-JEPA live · " + VJ_HOST : "V-JEPA waiting for the camera feed");
+    updateVj(); return;
+  }
+  if(m.type === "status"){ vjStatus(m.upstream === "up", m.upstream === "up" ? "V-JEPA live · " + VJ_HOST : "V-JEPA waiting for the camera feed"); return; }
+  if(m.type !== "window") return;
+  const prev = vjLast; vjLast = m; vjLast.recv = Date.now();
+  vjStatus(true, "V-JEPA live · " + VJ_HOST);
+  vjHist.push({t: m.t*1000 + clockOffset, shat: m.shat, alert: m.alert});
+  if(m.alert && !(prev && prev.alert))
+    addVjEvent(`V-JEPA: sustained surprise, ŝ = ${m.shat.toFixed(2)}`, 2);
+  else if(!m.alert && prev && prev.alert) addVjEvent("V-JEPA: surprise back below τ", 0);
+  updateVj(); drawLiveHeat();
+}
+const vjFresh = () => vjLast && Date.now() - vjLast.recv < 3000;
+function updateVj(){
+  if(!vjCfg || !vjFresh()){
+    badge("b-vj", null, vjCfg ? "WARMING UP" : "OFFLINE");
+    $("val-shat").textContent = "—"; $("vj-s").textContent = "—"; $("vj-ms").textContent = "—"; $("vj-lag").textContent = "—";
+    setBar("shat", null, "0%", "#3d4148"); updateFused(); drawLiveHeat(); return;
+  }
+  const m = vjLast;
+  badge("b-vj", m.alert ? 2 : 0);
+  $("val-shat").textContent = m.shat.toFixed(3); $("vj-s").textContent = m.s.toPrecision(4);
+  $("vj-ms").textContent = Math.round(m.ms); $("vj-lag").textContent = m.lag.toFixed(1);
+  setBar("shat", m.shat, Math.min(100, m.shat/1.5*100)+"%", m.shat > 1 ? "#ff6d00" : "#d2a8ff");
+  updateFused();
+}
+function updateFused(){
+  const vj = vjFresh() ? (vjLast.alert ? 2 : 0) : null;
+  badge("b-fused", stlNow == null && vj == null ? null : Math.max(stlNow ?? 0, vj ?? 0), "—");
+}
+setInterval(() => { if(mode === "live" && vjLast && !vjFresh()) updateVj(); }, 1000);
+const lov = $("live-ov"), lctx = lov.getContext("2d"), liveHeat = document.createElement("canvas");
+function drawLiveHeat(){
+  const W = lov.clientWidth, H = lov.clientHeight, dpr = devicePixelRatio||1;
+  if(!W || !H) return;
+  if(lov.width !== W*dpr || lov.height !== H*dpr){ lov.width = W*dpr; lov.height = H*dpr; }
+  lctx.setTransform(dpr,0,0,dpr,0,0); lctx.clearRect(0,0,W,H);
+  if(!vjCfg) return;
+  const [fw, fh] = vjCfg.frame_wh, sx = W/fw, sy = H/fh, [x0,y0,x1,y1] = vjCfg.crop_box;
+  if($("live-heat").checked && vjFresh() && vjLast.map){
+    const [gh, gw] = vjCfg.grid, bin = atob(vjLast.map);
+    liveHeat.width = gw; liveHeat.height = gh;
+    const hc = liveHeat.getContext("2d"), img = hc.createImageData(gw, gh);
+    for(let i=0;i<gh*gw;i++){ const v = bin.charCodeAt(i);
+      img.data[i*4]=LUT[v*3]; img.data[i*4+1]=LUT[v*3+1]; img.data[i*4+2]=LUT[v*3+2]; img.data[i*4+3]=v; }
+    hc.putImageData(img, 0, 0);
+    lctx.imageSmoothingEnabled = true; lctx.globalAlpha = .75;
+    lctx.drawImage(liveHeat, x0*sx, y0*sy, (x1-x0)*sx, (y1-y0)*sy); lctx.globalAlpha = 1;
+  }
+  lctx.strokeStyle = "rgba(210,168,255,.55)"; lctx.setLineDash([6,4]); lctx.strokeRect(x0*sx, y0*sy, (x1-x0)*sx, (y1-y0)*sy); lctx.setLineDash([]);
+  lctx.fillStyle = "rgba(210,168,255,.8)"; lctx.font = "11px system-ui"; lctx.fillText("V-JEPA input region", x0*sx+6, y0*sy+14);
+}
+$("live-heat").onchange = drawLiveHeat;
+function addVjEvent(msg, level){
+  const div = document.createElement("div");
+  div.className = "ev level-" + level; div.style.cursor = "default";
+  div.innerHTML = `<span class="t" style="width:64px">${new Date().toLocaleTimeString()}</span><span class="src vj">V-JEPA</span><span>${msg}</span>`;
+  const box = $("live-events"); box.prepend(div); if(box.children.length > 50) box.lastChild.remove();
 }
 function addLiveEvent(evt, now){
   const div = document.createElement("div");
@@ -600,10 +702,20 @@ function drawLiveTimeline(){
   if(tl.width !== W*dpr || tl.height !== H*dpr){ tl.width = W*dpr; tl.height = H*dpr; }
   const c = tctx; c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,W,H);
   const L = 74, R = 8, w = W-L-R, now = Date.now(), x = t => L + (1 - (now - t)/(LIVE_WINDOW_S*1000)) * w;
-  const y1 = 3, h1 = H*.3 - 6, y2 = H*.3 + 3, h2 = H*.7 - 22;
+  const y1 = 3, h1 = H*.2 - 6, y3 = H*.2 + 2, h3 = H*.36 - 4, y2 = H*.56 + 2, h2 = H*.44 - 20;
   c.font = "11px system-ui"; c.textBaseline = "middle"; c.fillStyle = "#8b949e";
-  c.fillText("STL level", 4, y1+h1/2); c.fillText("ρ1 margin", 4, y2+h2/2);
-  c.fillStyle = "#161b22"; c.fillRect(L,y1,w,h1); c.fillRect(L,y2,w,h2);
+  c.fillText("STL level", 4, y1+h1/2); c.fillText("V-JEPA ŝ", 4, y3+h3/2); c.fillText("ρ1 margin", 4, y2+h2/2);
+  c.fillStyle = "#161b22"; c.fillRect(L,y1,w,h1); c.fillRect(L,y3,w,h3); c.fillRect(L,y2,w,h2);
+  // V-JEPA ŝ with the τ line (ŝ = 1); orange where the alert is on
+  const slo = 0.8, shi = 1.3, ys = v => y3 + h3 - (Math.max(slo, Math.min(shi, v)) - slo)/(shi - slo)*h3;
+  c.strokeStyle = "#ff6d00"; c.setLineDash([4,3]); c.beginPath(); c.moveTo(L, ys(1)); c.lineTo(L+w, ys(1)); c.stroke(); c.setLineDash([]);
+  for(let i=0; i<vjHist.length; i++){ const p = vjHist[i], q = vjHist[i+1];
+    if(p.alert){ c.fillStyle = "rgba(255,109,0,.25)"; c.fillRect(x(p.t), y3, Math.max(1, (q ? x(q.t) : x(p.t)+2) - x(p.t)), h3); } }
+  c.strokeStyle = "#d2a8ff"; c.lineWidth = 1.2; c.beginPath();
+  for(let i=0; i<vjHist.length; i++){ const p = vjHist[i], gap = i && p.t - vjHist[i-1].t > 2000;
+    if(x(p.t) < L) continue;
+    if(!i || gap || x(vjHist[i-1].t) < L) c.moveTo(x(p.t), ys(p.shat)); else c.lineTo(x(p.t), ys(p.shat)); }
+  c.stroke(); c.lineWidth = 1;
   for(let i=0; i<liveHist.length; i++){ const p = liveHist[i], q = liveHist[i+1];
     if(p.level > 0){ c.fillStyle = LEVEL_COLOURS[p.level]; c.fillRect(x(p.t), y1, Math.max(1, (q ? x(q.t) : x(now)) - x(p.t)), h1); } }
   const lo = -3, hi = 8, yv = v => y2 + h2 - (Math.max(lo, Math.min(hi, v)) - lo)/(hi-lo)*h2;
@@ -633,7 +745,8 @@ function setMode(m){
   if(m === "live"){
     setPlaying(false);
     $("clip-badge").textContent = `live · ${LIVE_HOST}`;
-    badge("b-stl", null, "—"); badge("b-vj", null, "RECORDED ONLY"); badge("b-fused", null, "—");
+    badge("b-stl", null, "—"); badge("b-vj", null, "OFFLINE"); badge("b-fused", null, "—"); stlNow = null;
+    $("val-shat").textContent = "—"; $("vj-s").textContent = "—"; setBar("shat", null, "0%", "#3d4148");
     liveHist = []; $("live-events").innerHTML = "";
     liveMessage(false); fitStage(); liveConnect();
   } else {
